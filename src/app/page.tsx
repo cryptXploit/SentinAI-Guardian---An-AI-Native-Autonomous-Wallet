@@ -1,3 +1,5 @@
+import AgentConsole from "@/components/agent/AgentConsole";
+
 export default function Home() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -21,12 +23,8 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="bg-surface border border-border rounded-xl p-6 min-h-[400px]">
-        <h3 className="text-lg font-medium mb-4">Recent Agent Activity</h3>
-        <div className="flex flex-col items-center justify-center h-64 text-gray-500">
-          <p>No recent activity.</p>
-          <p className="text-sm mt-1">Connect the Execution Controller to see live updates.</p>
-        </div>
+      <div className="mt-8">
+        <AgentConsole />
       </div>
     </div>
   );
