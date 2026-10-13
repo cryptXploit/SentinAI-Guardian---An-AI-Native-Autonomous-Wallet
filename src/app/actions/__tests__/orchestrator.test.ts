@@ -59,20 +59,25 @@ vi.mock('@/core/security/simulator', () => ({
   }),
 }));
 
-vi.mock('@/core/execution/controller', () => ({
-  broadcastTransaction: vi.fn().mockResolvedValue({
-    hash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-  }),
-  waitForReceipt: vi.fn().mockResolvedValue({
-    status: 'success',
-    blockNumber: BigInt(12345),
-  }),
-  executeTransaction: vi.fn().mockResolvedValue({
-    success: true,
-    transactionHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-    receiptStatus: 'success',
-  }),
-}));
+vi.mock('@/core/execution/controller', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/core/execution/controller')>();
+  return {
+    ...actual,
+    broadcastTransaction: vi.fn().mockResolvedValue({
+      hash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+      outcome: 'BROADCAST_SUBMITTED',
+    }),
+    waitForReceipt: vi.fn().mockResolvedValue({
+      status: 'success',
+      blockNumber: BigInt(12345),
+    }),
+    executeTransaction: vi.fn().mockResolvedValue({
+      success: true,
+      transactionHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+      receiptStatus: 'success',
+    }),
+  };
+});
 
 // Helper: create a mock IIP for direct proposal store tests
 function createMockIIP(overrides?: Partial<IntentIntegrityProof>): IntentIntegrityProof {

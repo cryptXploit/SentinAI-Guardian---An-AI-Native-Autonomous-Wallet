@@ -14,6 +14,7 @@ import {
   Coins,
   Activity,
   Lock,
+  Sparkles,
 } from "lucide-react";
 import { PrepareResult, AuthorizeResult } from "@/app/actions/orchestrator";
 import IntentComparisonPanel from "./IntentComparisonPanel";
@@ -201,16 +202,17 @@ export default function EvidencePanel({
     );
   }
 
-  // Phase 1: Semantic Verification & Risk Evidence (Milestone R7)
+  // Phase 1: Semantic Verification & Risk Evidence (Milestone R7 / R7.1)
   const summary = prepareResult?.summary;
   const analysis = prepareResult?.analysis;
-  const isBlocked = !prepareResult?.success || (analysis && !analysis.canExecute);
-  const isReadyForAuth = !isBlocked && prepareResult?.proposalId && summary;
+  const isDemo = Boolean(prepareResult?.isDemo || prepareResult?.provenance === 'SECURITY_FIXTURE');
+  const isBlocked = !prepareResult?.success || Boolean(analysis && !analysis.canExecute);
+  const isReadyForAuth = !isBlocked && !isDemo && Boolean(prepareResult?.proposalId && summary);
   const proposalId = prepareResult?.proposalId;
 
   return (
     <div className="space-y-6">
-      {/* 1. Milestone R7 Intent Comparison Panel */}
+      {/* 1. Milestone R7 / R7.1 Intent Comparison Panel */}
       {analysis && (
         <IntentComparisonPanel
           analysis={analysis}
@@ -218,11 +220,39 @@ export default function EvidencePanel({
           explanation={prepareResult?.explanation}
           summary={summary}
           isBlocked={isBlocked}
+          isDemo={isDemo}
           error={prepareResult?.error}
         />
       )}
 
-      {/* 2. Phase 1 Authorization Gate or Blocked Notice */}
+      {/* Demo Fixture Isolation Card (R7.1 Priority A) */}
+      {isDemo && (
+        <div className="border border-purple-500/40 bg-purple-950/15 rounded-xl p-5 flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-purple-500/20 text-purple-400">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h5 className="font-semibold text-sm text-purple-300">
+                  Controlled Security Demonstration Fixture
+                </h5>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  DEMO / SIMULATED
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                This scenario is an educational simulation. By architectural design, security demonstration fixtures are permanently isolated from the wallet signing key and cannot be broadcast to the blockchain.
+              </p>
+            </div>
+          </div>
+          <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+            NON-EXECUTABLE DEMO
+          </span>
+        </div>
+      )}
+
+      {/* 2. Phase 1 Authorization Gate (Live Verified Proposals ONLY) */}
       {isReadyForAuth && proposalId && summary && (
         <div className="border border-emerald-500/30 bg-surface rounded-xl overflow-hidden shadow-lg p-6">
           <div className="flex items-center justify-between flex-wrap gap-4">
@@ -263,8 +293,8 @@ export default function EvidencePanel({
         </div>
       )}
 
-      {/* Blocked Security Barrier */}
-      {isBlocked && (
+      {/* Blocked Security Barrier (for genuine blocked live commands) */}
+      {isBlocked && !isDemo && (
         <div className="border border-red-500/30 bg-red-950/10 rounded-xl p-5 flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-red-500/20 text-red-400">

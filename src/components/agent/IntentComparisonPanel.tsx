@@ -24,6 +24,7 @@ interface IntentComparisonPanelProps {
   explanation?: SecurityExplanationResult;
   summary?: ProposalSummary;
   isBlocked?: boolean;
+  isDemo?: boolean;
   error?: string;
 }
 
@@ -33,6 +34,7 @@ export default function IntentComparisonPanel({
   explanation,
   summary,
   isBlocked = false,
+  isDemo = false,
 }: IntentComparisonPanelProps) {
   const [copiedDigest, setCopiedDigest] = useState(false);
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
@@ -88,20 +90,34 @@ export default function IntentComparisonPanel({
             </div>
           )}
           <div>
-            <h4 className="font-semibold text-sm tracking-wide uppercase">
-              Intent-to-Transaction Semantic Verification
-            </h4>
+            <div className="flex items-center gap-2">
+              <h4 className="font-semibold text-sm tracking-wide uppercase">
+                Intent-to-Transaction Semantic Verification
+              </h4>
+              {isDemo && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                  DEMO / SIMULATED
+                </span>
+              )}
+            </div>
             <p className="text-xs opacity-90 mt-0.5">
               {!canExecute || isBlocked
                 ? "EXECUTION BLOCKED — Deterministic verification detected unauthorized or malicious parameters."
                 : status === "SUSPICIOUS"
                 ? "ELEVATED RISK — Review warnings before proceeding with authorization."
-                : "VERIFIED SAFE — Transaction calldata conforms exactly to authorized intent."}
+                : isDemo
+                ? "SIMULATED COMPLIANT — Fixture inputs conform to deterministic policy rules (Demonstration Only)."
+                : "POLICY COMPLIANT — Transaction calldata matches requested intent and adheres to user policy."}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {isDemo && (
+            <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+              SIMULATED
+            </span>
+          )}
           <span
             className={`px-3 py-1 rounded-full text-xs font-mono font-bold tracking-wider uppercase border ${
               !canExecute || isBlocked

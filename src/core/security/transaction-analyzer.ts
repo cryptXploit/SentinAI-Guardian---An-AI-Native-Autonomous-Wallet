@@ -6,7 +6,7 @@ import {
   isAddressEqual,
   Address,
 } from 'viem';
-import { ParsedIntent, UserPolicy } from '../domain/schemas';
+import { ParsedIntent, UserPolicy, findTokenApprovalPolicy } from '../domain/schemas';
 import { TransactionCandidate, SUPPORTED_TOKENS, TokenInfo } from '../transaction/builder';
 
 export type FindingSeverity = 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
@@ -80,9 +80,8 @@ const ERC20_ABI = parseAbi([
   'function approve(address spender, uint256 amount) returns (bool)',
 ]);
 
-const MAX_UINT256_THRESHOLD = BigInt(
-  '0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-); // 2^255
+export const EXACT_MAX_UINT256 = (1n << 256n) - 1n; // 2^256 - 1
+export const EXTREMELY_LARGE_FINITE_THRESHOLD = 1n << 255n; // 2^255
 
 /**
  * Deterministically analyzes transaction semantics and compares requested intent
@@ -154,7 +153,7 @@ export function analyzeTransaction(params: {
         decodedMethod = 'approve(address,uint256)';
         decodedRecipientOrSpender = (decoded.args?.[0] as string) || '';
         decodedRawAmount = (decoded.args?.[1] as bigint) || 0n;
-        isUnlimited = decodedRawAmount >= MAX_UINT256_THRESHOLD;
+        isUnlimited = decodedRawAmount === EXACT_MAX_UINT256;
       }
     } catch {
       operationType = 'UNSUPPORTED_CALL';
@@ -177,8 +176,14 @@ export function analyzeTransaction(params: {
   }
 
   let formattedDecodedAmount = '0';
-  if (isUnlimited) {
-    formattedDecodedAmount = 'UNLIMITED (2^256-1)';
+  if (decodedRawAmount === EXACT_MAX_UINT256) {
+    formattedDecodedAmount = 'EXACT UNLIMITED (2^256-1)';
+  } else if (decodedRawAmount >= EXTREMELY_LARGE_FINITE_THRESHOLD) {
+    try {
+      formattedDecodedAmount = `${formatUnits(decodedRawAmount, tokenDecimals)} (EXTREMELY LARGE FINITE)`;
+    } catch {
+      formattedDecodedAmount = `${decodedRawAmount.toString()} (EXTREMELY LARGE FINITE)`;
+    }
   } else {
     try {
       formattedDecodedAmount = formatUnits(decodedRawAmount, tokenDecimals);
@@ -436,46 +441,114 @@ export function analyzeTransaction(params: {
     }
   }
 
-  // --- RULE 8.5: UNLIMITED APPROVAL REQUEST ---
-  if (operationType === 'ERC20_APPROVE' && isUnlimited) {
-    if (!policy.allowUnlimitedApproval) {
-      mismatches.push('UNLIMITED_APPROVAL_REQUEST');
+  // --- RULE 8.5: UNLIMITED & EXTREMELY LARGE APPROVAL CHECKS ---
+  if (operationType === 'ERC20_APPROVE') {
+    if (decodedRawAmount === EXACT_MAX_UINT256) {
+      if (!policy.allowUnlimitedApproval) {
+        mismatches.push('UNLIMITED_APPROVAL_REQUEST');
+        findings.push({
+          code: 'UNLIMITED_APPROVAL_REQUEST',
+          severity: 'HIGH',
+          category: 'POLICY_VIOLATION',
+          title: 'Unlimited Approval Blocked by Policy',
+          explanation: `Transaction requests an exact unlimited allowance (2^256-1) for ${tokenSymbol}, which violates the user risk policy prohibiting unlimited approvals.`,
+          evidence: { requestedAllowanceRaw: decodedRawAmount.toString() },
+          source: 'POLICY_ENGINE',
+          affectsExecution: true,
+        });
+      } else if (intent.amount !== 'UNLIMITED') {
+        mismatches.push('UNLIMITED_APPROVAL_MISMATCH');
+        findings.push({
+          code: 'UNLIMITED_APPROVAL_MISMATCH',
+          severity: 'CRITICAL',
+          category: 'INTENT_MISMATCH',
+          title: 'Unauthorized Unlimited Approval Request',
+          explanation: `User requested a bounded approval of ${intent.amount} ${tokenSymbol}, but transaction calldata requests an exact unlimited (2^256-1) allowance.`,
+          evidence: {
+            expectedAmount: intent.amount,
+            requestedAllowanceRaw: decodedRawAmount.toString(),
+          },
+          source: 'DETERMINISTIC_ANALYZER',
+          affectsExecution: true,
+        });
+      } else {
+        findings.push({
+          code: 'UNLIMITED_APPROVAL_REQUEST',
+          severity: 'MEDIUM',
+          category: 'EXPOSURE_RISK',
+          title: 'Unlimited Token Allowance Warning',
+          explanation: `This transaction grants the spender complete permission to transfer all current and future ${tokenSymbol} tokens in this wallet.`,
+          evidence: { requestedAllowanceRaw: decodedRawAmount.toString() },
+          source: 'DETERMINISTIC_ANALYZER',
+          affectsExecution: false,
+        });
+      }
+    } else if (decodedRawAmount >= EXTREMELY_LARGE_FINITE_THRESHOLD) {
       findings.push({
-        code: 'UNLIMITED_APPROVAL_REQUEST',
+        code: 'EXTREMELY_LARGE_FINITE_ALLOWANCE',
         severity: 'HIGH',
-        category: 'POLICY_VIOLATION',
-        title: 'Unlimited Approval Blocked by Policy',
-        explanation: `Transaction requests an unlimited allowance (2^256-1) for ${tokenSymbol}, which violates the user risk policy prohibiting unlimited approvals.`,
-        evidence: { requestedAllowanceRaw: decodedRawAmount.toString() },
-        source: 'POLICY_ENGINE',
-        affectsExecution: true,
-      });
-    } else if (intent.amount !== 'UNLIMITED') {
-      mismatches.push('UNLIMITED_APPROVAL_MISMATCH');
-      findings.push({
-        code: 'UNLIMITED_APPROVAL_MISMATCH',
-        severity: 'CRITICAL',
-        category: 'INTENT_MISMATCH',
-        title: 'Unauthorized Unlimited Approval Request',
-        explanation: `User requested a bounded approval of ${intent.amount} ${tokenSymbol}, but transaction calldata requests an unlimited (2^256-1) allowance.`,
-        evidence: {
-          expectedAmount: intent.amount,
-          requestedAllowanceRaw: decodedRawAmount.toString(),
-        },
-        source: 'DETERMINISTIC_ANALYZER',
-        affectsExecution: true,
-      });
-    } else {
-      findings.push({
-        code: 'UNLIMITED_APPROVAL_REQUEST',
-        severity: 'MEDIUM',
         category: 'EXPOSURE_RISK',
-        title: 'Unlimited Token Allowance Warning',
-        explanation: `This transaction grants the spender complete permission to transfer all current and future ${tokenSymbol} tokens in this wallet.`,
+        title: 'Extremely Large Finite Allowance Warning',
+        explanation: `Transaction requests an extraordinarily large finite allowance of ${formattedDecodedAmount} ${tokenSymbol}. While finite, this represents severe blast radius exposure.`,
         evidence: { requestedAllowanceRaw: decodedRawAmount.toString() },
         source: 'DETERMINISTIC_ANALYZER',
         affectsExecution: false,
       });
+    }
+  }
+
+  // --- RULE 8.11: TOKEN-SPECIFIC APPROVAL POLICY ENFORCEMENT ---
+  if (operationType === 'ERC20_APPROVE' && policy.tokenApprovalPolicies) {
+    const tokenPolicy = findTokenApprovalPolicy(policy, candidate.chainId, candidate.to);
+    if (!tokenPolicy) {
+      mismatches.push('NO_TOKEN_APPROVAL_POLICY');
+      findings.push({
+        code: 'NO_TOKEN_APPROVAL_POLICY',
+        severity: 'CRITICAL',
+        category: 'POLICY_VIOLATION',
+        title: 'No Token Approval Policy Configured',
+        explanation: `No approval policy exists for token ${candidate.to} on chain ${candidate.chainId}. Unconfigured token approvals fail closed.`,
+        evidence: { tokenAddress: candidate.to, chainId: candidate.chainId },
+        source: 'POLICY_ENGINE',
+        affectsExecution: true,
+      });
+    } else {
+      const isAllowedSpender = tokenPolicy.allowedSpenders.some(
+        (s) => s.toLowerCase() === decodedRecipientOrSpender.toLowerCase()
+      );
+      if (!isAllowedSpender) {
+        mismatches.push('UNAUTHORIZED_SPENDER');
+        findings.push({
+          code: 'UNAUTHORIZED_SPENDER',
+          severity: 'CRITICAL',
+          category: 'POLICY_VIOLATION',
+          title: 'Unauthorized Approval Spender',
+          explanation: `Spender ${decodedRecipientOrSpender} is not authorized in token approval policy for ${tokenSymbol}.`,
+          evidence: { spender: decodedRecipientOrSpender, allowedSpenders: tokenPolicy.allowedSpenders },
+          source: 'POLICY_ENGINE',
+          affectsExecution: true,
+        });
+      }
+
+      const tokenCap = BigInt(tokenPolicy.maxApprovalAmountBaseUnits);
+      if (decodedRawAmount === EXACT_MAX_UINT256 && !tokenPolicy.allowUnlimited && !policy.allowUnlimitedApproval) {
+        // already handled by Rule 8.5
+      } else if (decodedRawAmount > tokenCap) {
+        mismatches.push('APPROVAL_POLICY_CAP_EXCEEDED');
+        findings.push({
+          code: 'APPROVAL_POLICY_CAP_EXCEEDED',
+          severity: 'CRITICAL',
+          category: 'POLICY_VIOLATION',
+          title: 'Token Approval Ceiling Exceeded',
+          explanation: `Proposed allowance (${formattedDecodedAmount} ${tokenSymbol}) exceeds token-specific spending ceiling of ${formatUnits(tokenCap, tokenPolicy.tokenDecimals)} ${tokenSymbol}.`,
+          evidence: {
+            proposedAllowanceRaw: decodedRawAmount.toString(),
+            policyCapRaw: tokenCap.toString(),
+          },
+          source: 'POLICY_ENGINE',
+          affectsExecution: true,
+        });
+      }
     }
   }
 

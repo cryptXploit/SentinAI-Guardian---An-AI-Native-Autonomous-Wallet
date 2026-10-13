@@ -32,6 +32,8 @@ describe('R5E Non-Destructive Database Migration Suite', () => {
     expect(columnNames.has('authorized_at')).toBe(true);
     expect(columnNames.has('tx_hash')).toBe(true);
     expect(columnNames.has('updated_at')).toBe(true);
+    expect(columnNames.has('provenance')).toBe(true);
+    expect(columnNames.has('is_executable')).toBe(true);
   });
 
   it('M2: Non-destructive migration from v1 schema preserves confirmed records and transaction hashes', () => {
@@ -70,12 +72,12 @@ describe('R5E Non-Destructive Database Migration Suite', () => {
       'PREPARED'
     );
 
-    // 2. Run migration to v2
+    // 2. Run migration to current schema
     migrateSchema(db);
 
-    // Verify schema version updated to 2
+    // Verify schema version updated to current SCHEMA_VERSION
     const versionRow = db.prepare('SELECT version FROM schema_version LIMIT 1').get() as { version: number };
-    expect(versionRow.version).toBe(2);
+    expect(versionRow.version).toBe(SCHEMA_VERSION);
 
     // Verify historical confirmed proposal survived with intact status
     const confirmed = db.prepare('SELECT * FROM proposals WHERE id = ?').get('prop-confirmed-1') as {

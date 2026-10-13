@@ -5,8 +5,13 @@ import { evaluatePolicy, PolicyDecision } from "@/core/policy/engine";
 import { buildTransaction, TransactionCandidate } from "@/core/transaction/builder";
 import { simulateTransaction } from "@/core/security/simulator";
 import { generateIIP, verifyIIPDigest } from "@/core/security/iip";
-import { broadcastTransaction, waitForReceipt, ExecutionResult } from "@/core/execution/controller";
-import { UserPolicy, isReadOnlyAction } from "@/core/domain/schemas";
+import {
+  broadcastTransaction,
+  waitForReceipt,
+  ExecutionResult,
+  BroadcastError,
+} from "@/core/execution/controller";
+import { UserPolicy, isReadOnlyAction, ProposalProvenance } from "@/core/domain/schemas";
 import { verifySession } from "@/core/security/auth";
 import { getLiveWalletOverview, WalletOverview } from "@/core/web3/wallet-service";
 import { verifySepoliaConnection, RpcConnectionStatus } from "@/core/web3/rpc-service";
@@ -25,6 +30,7 @@ import {
 import { getFixtureById } from "../../../fixtures/security";
 import {
   storeProposal,
+  storeFixtureProposal,
   retrieveProposal,
   authorizeProposal,
   lockProposalForExecution,
@@ -32,16 +38,49 @@ import {
   updateProposalStatus,
   isProposalExpired,
   getProposalStatus,
+  DEFAULT_PROPOSAL_LIFETIME_MS,
 } from "@/core/security/proposal";
 
-const MOCK_USER_POLICY: UserPolicy = {
+export const MOCK_USER_POLICY: UserPolicy = {
   maxTransferAmountETH: "1.0",
   allowUnlimitedApproval: false,
   trustedContacts: {
     "alice": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
     "bob": "0x1111111254fb6c44bac0bed2854e76f90643097d",
-    "uniswap": "0x1111111254fb6c44bac0bed2854e76f90643097d"
-  }
+    "uniswap": "0x1111111254fb6c44bac0bed2854e76f90643097d",
+  },
+  tokenApprovalPolicies: {
+    // Sepolia USDC (6 decimals, 100 USDC allowance ceiling)
+    "11155111:0x1c7d4b196cb0c7b01d743fbc6116a902379c7238": {
+      chainId: 11155111,
+      tokenContractAddress: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+      tokenSymbol: "USDC",
+      tokenDecimals: 6,
+      maxApprovalAmountBaseUnits: "100000000", // 100 USDC
+      allowedSpenders: ["0x1111111254fb6c44bac0bed2854e76f90643097d"],
+      allowUnlimited: false,
+    },
+    // Sepolia DAI (18 decimals, 100 DAI allowance ceiling)
+    "11155111:0xff34b3d4aee8ddcd6f9afffb6fe49bd371b8a357": {
+      chainId: 11155111,
+      tokenContractAddress: "0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357",
+      tokenSymbol: "DAI",
+      tokenDecimals: 18,
+      maxApprovalAmountBaseUnits: "100000000000000000000", // 100 DAI
+      allowedSpenders: ["0x1111111254fb6c44bac0bed2854e76f90643097d"],
+      allowUnlimited: false,
+    },
+    // Sepolia USDT (6 decimals, 100 USDT allowance ceiling)
+    "11155111:0x7169d3882044463f11a3e45775678b78d3845610": {
+      chainId: 11155111,
+      tokenContractAddress: "0x7169D3882044463f11A3E45775678B78d3845610",
+      tokenSymbol: "USDT",
+      tokenDecimals: 6,
+      maxApprovalAmountBaseUnits: "100000000", // 100 USDT
+      allowedSpenders: ["0x1111111254fb6c44bac0bed2854e76f90643097d"],
+      allowUnlimited: false,
+    },
+  },
 };
 
 export type ProposalSummary = {
@@ -64,6 +103,8 @@ export type QueryResult = {
 export type PrepareResult = {
   success: boolean;
   isQuery?: boolean;
+  isDemo?: boolean;
+  provenance?: ProposalProvenance;
   queryResult?: QueryResult;
   proposalId?: string;
   summary?: ProposalSummary;
@@ -82,7 +123,7 @@ export type AuthorizeResult = {
 };
 
 /**
- * Phase 1: Intent Preparation & Proposal Creation (R5D/R6 — Query-Aware, Owner-Bound, Expiring)
+ * Phase 1: Intent Preparation & Proposal Creation (R5D/R6/R7.1 — Query-Aware, Owner-Bound, Expiring)
  * Pipeline: Parse -> If Read-Only Query: Route Immediately -> Else: Resolve -> Build -> Simulate -> Policy -> IIP -> Store
  * Returns ONLY proposalId and sanitized summary for transactions, or queryResult for read-only actions.
  */
@@ -110,6 +151,8 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
         return {
           success: true,
           isQuery: true,
+          isDemo: false,
+          provenance: 'LIVE_VERIFIED',
           queryResult: {
             action: 'QUERY_BALANCE',
             summary: `Wallet balance on Sepolia: ${overview.nativeBalance.formatted} ETH (${tokenSummaries})`,
@@ -122,6 +165,8 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
         return {
           success: true,
           isQuery: true,
+          isDemo: false,
+          provenance: 'LIVE_VERIFIED',
           queryResult: {
             action: 'QUERY_NETWORK',
             summary: `Connected to Ethereum Sepolia Testnet [Chain ID: ${connection.chainId}]${blockInfo} - Status: ${connection.status}`,
@@ -149,10 +194,18 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
         { success: false, revertReason: `Policy blocked: ${blockedDecision.reason}`, timestamp: new Date().toISOString() }
       );
 
-      const proposalId = storeProposal(blockedIIP, session.userId);
+      const proposalId = storeProposal(
+        blockedIIP,
+        session.userId,
+        DEFAULT_PROPOSAL_LIFETIME_MS,
+        'UNVERIFIED',
+        false
+      );
 
       return {
         success: false,
+        isDemo: false,
+        provenance: 'UNVERIFIED',
         error: `Policy Blocked: ${blockedDecision.reason}`,
         step: "POLICY_EVALUATION",
         proposalId,
@@ -176,7 +229,7 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
     }
     const simulation = await simulateTransaction(candidate, rpcUrl);
 
-    // Step 5: Deterministic Policy Evaluation against Candidate (R5B)
+    // Step 5: Deterministic Policy Evaluation against Candidate (R5B / R7.1)
     currentStep = "POLICY_EVALUATION";
     const policyDecision = evaluatePolicy(intent, candidate, MOCK_USER_POLICY);
 
@@ -191,13 +244,14 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
       simulationError: simulation.revertReason,
     });
 
-    // Step 7: Approval Exposure Intelligence (if APPROVE) (R7)
+    // Step 7: Approval Exposure Intelligence (if APPROVE) (R7 / R7.1)
     let exposure: ApprovalExposureAnalysis | undefined;
     if (analysis.operationType === 'ERC20_APPROVE') {
       exposure = analyzeApprovalExposure({
         tokenAddress: candidate.to,
         spenderAddress: analysis.decodedAction.recipientOrSpender,
         proposedAllowanceRaw: BigInt(analysis.decodedAction.rawAmount || '0'),
+        chainId: candidate.chainId,
         policy: MOCK_USER_POLICY,
         knownContacts: MOCK_USER_POLICY.trustedContacts,
       });
@@ -226,12 +280,21 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
     currentStep = "IIP_GENERATION";
     const iip = generateIIP(intent, candidate, effectivePolicyDecision, simulation);
 
-    // Step 10: Store Owner-Bound Proposal (R5D)
-    const proposalId = storeProposal(iip, session.userId);
+    // Step 10: Store Owner-Bound Proposal (R5D / R7.1)
+    const isExecutableProposal = !isSecurityBlocked && iip.finalDecision === "ALLOW_FOR_AUTHORIZATION";
+    const proposalId = storeProposal(
+      iip,
+      session.userId,
+      DEFAULT_PROPOSAL_LIFETIME_MS,
+      'LIVE_VERIFIED',
+      isExecutableProposal
+    );
 
     if (isSecurityBlocked || iip.finalDecision !== "ALLOW_FOR_AUTHORIZATION") {
       return {
         success: false,
+        isDemo: false,
+        provenance: 'LIVE_VERIFIED',
         error:
           effectivePolicyDecision.reason ||
           simulation.revertReason ||
@@ -255,6 +318,8 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
 
     return {
       success: true,
+      isDemo: false,
+      provenance: 'LIVE_VERIFIED',
       proposalId,
       analysis,
       exposure,
@@ -280,8 +345,14 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
 }
 
 /**
- * Executes a controlled security demonstration fixture (Milestone R7 Section 17).
+ * Executes a controlled security demonstration fixture (Milestone R7 Section 17 & R7.1 Isolation).
  * Tests the full transaction analysis pipeline on pre-defined security scenarios.
+ *
+ * CRITICAL SECURITY INVARIANT (R7.1):
+ * - Recorded with provenance: 'SECURITY_FIXTURE'
+ * - isExecutable is permanently false (0)
+ * - CANNOT be authorized or executed via authorizeAndExecute
+ * - Never touches private keys or broadcasts transactions
  */
 export async function testSecurityFixtureAction(scenarioId: string): Promise<PrepareResult> {
   const session = await verifySession();
@@ -319,6 +390,7 @@ export async function testSecurityFixtureAction(scenarioId: string): Promise<Pre
       tokenAddress: candidate.to,
       spenderAddress: analysis.decodedAction.recipientOrSpender,
       proposedAllowanceRaw: BigInt(analysis.decodedAction.rawAmount || '0'),
+      chainId: candidate.chainId,
       policy: MOCK_USER_POLICY,
       knownContacts: MOCK_USER_POLICY.trustedContacts,
     });
@@ -350,10 +422,13 @@ export async function testSecurityFixtureAction(scenarioId: string): Promise<Pre
     { success: simulationSuccess, revertReason: simulationError, timestamp: new Date().toISOString() }
   );
 
-  const proposalId = storeProposal(iip, session.userId);
+  // CRITICAL INVARIANT: Fixtures use storeFixtureProposal (STRICTLY NON-EXECUTABLE)
+  const proposalId = storeFixtureProposal(iip, session.userId);
 
   return {
     success: !isBlocked,
+    isDemo: true,
+    provenance: 'SECURITY_FIXTURE',
     proposalId,
     analysis,
     exposure,
@@ -372,18 +447,19 @@ export async function testSecurityFixtureAction(scenarioId: string): Promise<Pre
 }
 
 /**
- * Phase 2: Execution Authorization (R5D — Owner-Bound, Expiry-Checked, Atomic)
+ * Phase 2: Execution Authorization (R5D / R7.1 — Owner-Bound, Expiry-Checked, Atomic, Fixture-Isolated)
  *
  * Security gates:
  * 1. Authenticate request
  * 2. Retrieve proposal
+ * 2.5. Provenance & Execution Isolation Gate: Reject fixtures and unverified proposals
  * 3. Verify ownership
  * 4. Verify expiration
- * 5. Authorize proposal (PREPARED -> AUTHORIZED)
+ * 5. Authorize proposal (PREPARED -> AUTHORIZED with provenance check)
  * 6. Verify IIP digest integrity
- * 7. Acquire atomic execution lock (AUTHORIZED -> SUBMITTING)
+ * 7. Acquire atomic execution lock (AUTHORIZED -> SUBMITTING with provenance check)
  * 8. Validate execution authorization
- * 9. Execute and record terminal state
+ * 9. Execute with crash-safe broadcast uncertainty handling
  */
 export async function authorizeAndExecute(proposalId: string): Promise<AuthorizeResult> {
   // Gate 1: Authentication
@@ -398,6 +474,15 @@ export async function authorizeAndExecute(proposalId: string): Promise<Authorize
     throw new Error("UNKNOWN_PROPOSAL: Transaction proposal not found or expired.");
   }
 
+  // Gate 2.5: Demo Fixture Execution Isolation (R7.1 Priority A)
+  if (proposal.provenance === 'SECURITY_FIXTURE') {
+    throw new Error("FIXTURE_EXECUTION_BLOCKED: Security demonstration fixtures cannot be executed on the blockchain. Enter an authentic live command to create an executable proposal.");
+  }
+
+  if (proposal.provenance !== 'LIVE_VERIFIED' || !proposal.isExecutable) {
+    throw new Error("NON_EXECUTABLE_PROPOSAL: This proposal lacks verified live blockchain execution capability.");
+  }
+
   // Gate 3: Ownership Verification
   if (proposal.ownerId !== session.userId) {
     throw new Error("OWNERSHIP_VIOLATION: You are not the owner of this proposal.");
@@ -409,15 +494,13 @@ export async function authorizeAndExecute(proposalId: string): Promise<Authorize
   }
 
   // Gate 5: Authorization Transition (PREPARED -> AUTHORIZED)
-  // This is a no-op if already AUTHORIZED (lock will handle it)
   const currentStatus = getProposalStatus(proposalId);
   if (currentStatus === 'PREPARED') {
     const authorized = authorizeProposal(proposalId, session.userId);
     if (!authorized) {
-      throw new Error("AUTHORIZATION_FAILED: Could not authorize proposal. It may have expired or been modified.");
+      throw new Error("AUTHORIZATION_FAILED: Could not authorize proposal. It may have expired, be non-executable, or have been modified.");
     }
   } else if (currentStatus !== 'AUTHORIZED') {
-    // Already past AUTHORIZED state
     throw new Error("DUPLICATE_EXECUTION: Transaction is already processing or executed.");
   }
 
@@ -447,7 +530,7 @@ export async function authorizeAndExecute(proposalId: string): Promise<Authorize
     throw new Error("MISSING_CREDENTIALS: Real execution requires configured private key and RPC URL.");
   }
 
-  // Execute with crash-safe phased approach:
+  // Execute with crash-safe phased approach and broadcast uncertainty handling:
   // Phase B: Broadcast → Phase C: Persist hash & SUBMITTED state → Phase D: Wait receipt → Phase E: Final state
   try {
     // Phase B: Broadcast signed transaction
@@ -470,6 +553,7 @@ export async function authorizeAndExecute(proposalId: string): Promise<Authorize
             success: true,
             transactionHash: hash,
             receiptStatus: 'success',
+            broadcastOutcome: 'RECEIPT_CONFIRMED',
           }
         };
       } else {
@@ -481,6 +565,7 @@ export async function authorizeAndExecute(proposalId: string): Promise<Authorize
             success: false,
             transactionHash: hash,
             receiptStatus: 'reverted',
+            broadcastOutcome: 'RECEIPT_REVERTED',
           }
         };
       }
@@ -495,8 +580,20 @@ export async function authorizeAndExecute(proposalId: string): Promise<Authorize
                `Proposal locked for reconciliation. Error: ${(receiptError as Error).message}`
       };
     }
-  } catch (broadcastError) {
-    // Broadcast itself failed — transaction was NOT sent to network
+  } catch (broadcastError: unknown) {
+    if (broadcastError instanceof BroadcastError && broadcastError.outcome === 'BROADCAST_OUTCOME_UNKNOWN') {
+      // Network timeout / connection reset after transaction dispatch: outcome is UNKNOWN!
+      // DO NOT mark as FAILED_BEFORE_BROADCAST — the transaction might be in mempool or mined!
+      // Must NOT be automatically replayed.
+      updateProposalStatus(proposalId, "EXECUTION_UNKNOWN");
+      return {
+        success: false,
+        proposalId,
+        error: `BROADCAST_UNCERTAIN: ${broadcastError.message}`
+      };
+    }
+
+    // Definitely not broadcast — failure occurred before dispatch
     updateProposalStatus(proposalId, "FAILED_BEFORE_BROADCAST");
     return {
       success: false,

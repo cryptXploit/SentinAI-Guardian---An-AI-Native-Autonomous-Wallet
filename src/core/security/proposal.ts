@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
 import fs from 'fs';
 import { IntentIntegrityProof } from './iip';
+import { ProposalProvenance } from '../domain/schemas';
 
 export type ProposalStatus =
   | 'PREPARED'
@@ -23,6 +24,8 @@ export type ProposalRecord = {
   digest: string;
   iipData: IntentIntegrityProof;
   status: ProposalStatus;
+  provenance: ProposalProvenance;
+  isExecutable: boolean;
   createdAt: string;
   expiresAt: string;
   authorizedAt: string | null;
@@ -60,7 +63,7 @@ export const ALLOWED_STATUS_TRANSITIONS: Readonly<Record<ProposalStatus, Readonl
 // Default proposal lifetime: 15 minutes
 export const DEFAULT_PROPOSAL_LIFETIME_MS = 15 * 60 * 1000;
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export function resolveDatabasePath(): string {
   if (process.env.VITEST === 'true' || process.env.NODE_ENV === 'test') {
@@ -92,7 +95,6 @@ export function backupDatabase(destinationPath: string): void {
   if (dbPath === ':memory:') {
     throw new Error('CANNOT_BACKUP_MEMORY_DB: Backup requires a persistent database file.');
   }
-  // Checkpoint WAL frames to guarantee consistent backup
   db.pragma('wal_checkpoint(TRUNCATE)');
   fs.copyFileSync(dbPath, destinationPath);
 }
@@ -109,7 +111,6 @@ export function migrateSchema(db: Database.Database, dbPath?: string): void {
     | undefined;
   const currentVersion = row?.version ?? 0;
 
-  // Fail safe on unsupported future schema version
   if (currentVersion > SCHEMA_VERSION) {
     throw new Error(
       `UNSUPPORTED_SCHEMA_VERSION: Database schema version ${currentVersion} is newer than application supported version ${SCHEMA_VERSION}`
@@ -117,10 +118,9 @@ export function migrateSchema(db: Database.Database, dbPath?: string): void {
   }
 
   if (currentVersion === SCHEMA_VERSION) {
-    return; // Already up to date
+    return;
   }
 
-  // Backup file database before non-destructive migration
   if (dbPath && dbPath !== ':memory:' && fs.existsSync(dbPath)) {
     try {
       db.pragma('wal_checkpoint(TRUNCATE)');
@@ -131,10 +131,8 @@ export function migrateSchema(db: Database.Database, dbPath?: string): void {
     }
   }
 
-  // Run atomic migration inside a transaction
   const runMigration = db.transaction(() => {
     if (currentVersion === 0) {
-      // Fresh initialization: Create complete schema
       db.exec(`
         CREATE TABLE IF NOT EXISTS proposals (
           id            TEXT PRIMARY KEY,
@@ -142,6 +140,8 @@ export function migrateSchema(db: Database.Database, dbPath?: string): void {
           digest        TEXT NOT NULL DEFAULT '',
           iip_data      TEXT NOT NULL,
           status        TEXT NOT NULL DEFAULT 'PREPARED',
+          provenance    TEXT NOT NULL DEFAULT 'UNVERIFIED',
+          is_executable INTEGER NOT NULL DEFAULT 0,
           created_at    DATETIME DEFAULT (datetime('now')),
           expires_at    DATETIME NOT NULL,
           authorized_at DATETIME,
@@ -149,8 +149,7 @@ export function migrateSchema(db: Database.Database, dbPath?: string): void {
           updated_at    DATETIME DEFAULT (datetime('now'))
         )
       `);
-    } else if (currentVersion === 1) {
-      // Non-destructive migration from v1 (R5C schema):
+    } else {
       const columns = db.prepare("PRAGMA table_info(proposals)").all() as Array<{ name: string }>;
       const columnNames = new Set(columns.map((c) => c.name));
 
@@ -173,24 +172,28 @@ export function migrateSchema(db: Database.Database, dbPath?: string): void {
         db.exec("ALTER TABLE proposals ADD COLUMN updated_at DATETIME DEFAULT '1970-01-01T00:00:00.000Z'");
         db.exec("UPDATE proposals SET updated_at = datetime('now') WHERE updated_at = '1970-01-01T00:00:00.000Z'");
       }
+      if (!columnNames.has('provenance')) {
+        db.exec("ALTER TABLE proposals ADD COLUMN provenance TEXT NOT NULL DEFAULT 'UNVERIFIED'");
+      }
+      if (!columnNames.has('is_executable')) {
+        db.exec("ALTER TABLE proposals ADD COLUMN is_executable INTEGER NOT NULL DEFAULT 0");
+      }
 
-      // Security requirement: Legacy records with insufficient security info (no authentic owner)
-      // must be quarantined into a non-executable state so they cannot be executed.
-      // Historical terminal records (CONFIRMED, FAILED, REVERTED) remain preserved!
+      // Security requirement: Legacy records with insufficient security info
+      // must be quarantined into a non-executable state.
       db.exec(`
         UPDATE proposals SET status = 'EXPIRED'
         WHERE owner_id = '__legacy__' AND status IN ('PREPARED', 'AUTHORIZED', 'SUBMITTING')
       `);
     }
 
-    // Ensure performance & uniqueness indexes
     db.exec(`
       CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status);
       CREATE INDEX IF NOT EXISTS idx_proposals_owner ON proposals(owner_id);
       CREATE INDEX IF NOT EXISTS idx_proposals_digest ON proposals(digest);
+      CREATE INDEX IF NOT EXISTS idx_proposals_provenance ON proposals(provenance);
     `);
 
-    // Update schema version record
     db.prepare('DELETE FROM schema_version').run();
     db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(SCHEMA_VERSION);
   });
@@ -229,12 +232,15 @@ function deserializeIIP(json: string): IntentIntegrityProof {
 // ─── Public API ─────────────────────────────────────────────────────────────
 
 /**
- * Stores a new proposal with a unique random ID. Returns the proposalId.
+ * Stores a new proposal with a unique random ID.
+ * Invariant: Only LIVE_VERIFIED proposals can ever be created with isExecutable=true.
  */
 export function storeProposal(
   iip: IntentIntegrityProof,
   ownerId: string,
-  lifetimeMs: number = DEFAULT_PROPOSAL_LIFETIME_MS
+  lifetimeMs: number = DEFAULT_PROPOSAL_LIFETIME_MS,
+  provenance: ProposalProvenance = 'LIVE_VERIFIED',
+  isExecutable: boolean = true
 ): string {
   const db = getDb();
   const serialized = serializeIIP(iip);
@@ -242,12 +248,27 @@ export function storeProposal(
   const expiresAt = new Date(Date.now() + lifetimeMs).toISOString();
   const proposalId = randomUUID();
 
+  // Strict backend-enforced invariant: Only LIVE_VERIFIED proposals can ever be executable
+  const executableInt = provenance === 'LIVE_VERIFIED' && isExecutable ? 1 : 0;
+
   db.prepare(
-    `INSERT INTO proposals (id, owner_id, digest, iip_data, status, expires_at)
-     VALUES (?, ?, ?, ?, 'PREPARED', ?)`
-  ).run(proposalId, ownerId, digest, serialized, expiresAt);
+    `INSERT INTO proposals (id, owner_id, digest, iip_data, status, provenance, is_executable, expires_at)
+     VALUES (?, ?, ?, ?, 'PREPARED', ?, ?, ?)`
+  ).run(proposalId, ownerId, digest, serialized, provenance, executableInt, expiresAt);
 
   return proposalId;
+}
+
+/**
+ * Stores a security demonstration fixture proposal.
+ * STRICTLY non-executable with SECURITY_FIXTURE provenance.
+ */
+export function storeFixtureProposal(
+  iip: IntentIntegrityProof,
+  ownerId: string,
+  lifetimeMs: number = DEFAULT_PROPOSAL_LIFETIME_MS
+): string {
+  return storeProposal(iip, ownerId, lifetimeMs, 'SECURITY_FIXTURE', false);
 }
 
 /**
@@ -256,7 +277,9 @@ export function storeProposal(
 export function retrieveProposal(proposalId: string): ProposalRecord | undefined {
   const db = getDb();
   const row = db.prepare(
-    'SELECT id, owner_id, digest, iip_data, status, created_at, expires_at, authorized_at, tx_hash FROM proposals WHERE id = ?'
+    `SELECT id, owner_id, digest, iip_data, status, provenance, is_executable,
+            created_at, expires_at, authorized_at, tx_hash
+     FROM proposals WHERE id = ?`
   ).get(proposalId) as
     | {
         id: string;
@@ -264,6 +287,8 @@ export function retrieveProposal(proposalId: string): ProposalRecord | undefined
         digest: string;
         iip_data: string;
         status: ProposalStatus;
+        provenance?: string;
+        is_executable?: number;
         created_at: string;
         expires_at: string;
         authorized_at: string | null;
@@ -273,12 +298,17 @@ export function retrieveProposal(proposalId: string): ProposalRecord | undefined
 
   if (!row) return undefined;
 
+  const provenance = (row.provenance as ProposalProvenance) || 'UNVERIFIED';
+  const isExecutable = Boolean(row.is_executable) && provenance === 'LIVE_VERIFIED';
+
   return {
     id: row.id,
     ownerId: row.owner_id,
     digest: row.digest,
     iipData: deserializeIIP(row.iip_data),
     status: row.status,
+    provenance,
+    isExecutable,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
     authorizedAt: row.authorized_at,
@@ -288,8 +318,6 @@ export function retrieveProposal(proposalId: string): ProposalRecord | undefined
 
 /**
  * Checks if a proposal has expired based on its expires_at field.
- * Handles UTC ISO 8601 strings with exact millisecond precision.
- * Exact boundary (referenceTimeMs >= expiry) is rejected.
  */
 export function isProposalExpired(proposalId: string, referenceTimeMs: number = Date.now()): boolean {
   const db = getDb();
@@ -304,8 +332,12 @@ export function isProposalExpired(proposalId: string, referenceTimeMs: number = 
 
 /**
  * Atomically transitions a proposal from PREPARED to AUTHORIZED.
- * Requires owner match and proposal must not be expired.
- * Preserves millisecond precision via ISO string comparison.
+ * Requires:
+ * 1. Owner match
+ * 2. Unexpired
+ * 3. Provenance MUST be 'LIVE_VERIFIED'
+ * 4. is_executable MUST be 1
+ * Demonstrations and unverified proposals CANNOT be authorized.
  */
 export function authorizeProposal(proposalId: string, ownerId: string): boolean {
   const db = getDb();
@@ -314,14 +346,19 @@ export function authorizeProposal(proposalId: string, ownerId: string): boolean 
     `UPDATE proposals
      SET status = 'AUTHORIZED', authorized_at = ?, updated_at = ?
      WHERE id = ? AND owner_id = ? AND status = 'PREPARED'
-     AND expires_at > ?`
+       AND provenance = 'LIVE_VERIFIED' AND is_executable = 1
+       AND expires_at > ?`
   ).run(now, now, proposalId, ownerId, now);
   return result.changes === 1;
 }
 
 /**
  * Atomically locks an AUTHORIZED proposal for execution (transition to SUBMITTING).
- * Requires owner match and proposal must not be expired.
+ * Requires:
+ * 1. Owner match
+ * 2. Unexpired
+ * 3. Provenance MUST be 'LIVE_VERIFIED'
+ * 4. is_executable MUST be 1
  */
 export function lockProposalForExecution(proposalId: string, ownerId: string): boolean {
   const db = getDb();
@@ -330,14 +367,14 @@ export function lockProposalForExecution(proposalId: string, ownerId: string): b
     `UPDATE proposals
      SET status = 'SUBMITTING', updated_at = ?
      WHERE id = ? AND owner_id = ? AND status = 'AUTHORIZED'
-     AND expires_at > ?`
+       AND provenance = 'LIVE_VERIFIED' AND is_executable = 1
+       AND expires_at > ?`
   ).run(now, proposalId, ownerId, now);
   return result.changes === 1;
 }
 
 /**
  * Phase C: Marks proposal as SUBMITTED immediately upon receiving broadcast transaction hash.
- * This persists the transaction hash BEFORE awaiting receipt confirmation.
  */
 export function markSubmitted(proposalId: string, txHash: string): boolean {
   const db = getDb();
@@ -365,7 +402,6 @@ export function recordTxHash(proposalId: string, txHash: string): void {
 /**
  * Updates the status of a proposal after execution or exception.
  * Validates transition against the explicit ALLOWED_STATUS_TRANSITIONS matrix.
- * Arbitrary or retrograde transitions are strictly rejected.
  */
 export function updateProposalStatus(
   proposalId: string,
@@ -400,7 +436,7 @@ export function cancelProposal(proposalId: string, ownerId: string): boolean {
 }
 
 /**
- * Expires all proposals that have passed their expiration time and are still in non-terminal states.
+ * Expires all proposals that have passed their expiration time.
  */
 export function expireStaleProposals(): number {
   const db = getDb();
@@ -430,7 +466,8 @@ export function getProposalStatus(proposalId: string): ProposalStatus | undefine
 export function getStuckSubmittingProposals(): ProposalRecord[] {
   const db = getDb();
   const rows = db.prepare(
-    `SELECT id, owner_id, digest, iip_data, status, created_at, expires_at, authorized_at, tx_hash
+    `SELECT id, owner_id, digest, iip_data, status, provenance, is_executable,
+            created_at, expires_at, authorized_at, tx_hash
      FROM proposals WHERE status IN ('SUBMITTING', 'SUBMITTED', 'RECONCILIATION_REQUIRED', 'EXECUTION_UNKNOWN')`
   ).all() as Array<{
     id: string;
@@ -438,6 +475,8 @@ export function getStuckSubmittingProposals(): ProposalRecord[] {
     digest: string;
     iip_data: string;
     status: ProposalStatus;
+    provenance?: string;
+    is_executable?: number;
     created_at: string;
     expires_at: string;
     authorized_at: string | null;
@@ -450,6 +489,8 @@ export function getStuckSubmittingProposals(): ProposalRecord[] {
     digest: row.digest,
     iipData: deserializeIIP(row.iip_data),
     status: row.status,
+    provenance: (row.provenance as ProposalProvenance) || 'UNVERIFIED',
+    isExecutable: Boolean(row.is_executable) && row.provenance === 'LIVE_VERIFIED',
     createdAt: row.created_at,
     expiresAt: row.expires_at,
     authorizedAt: row.authorized_at,

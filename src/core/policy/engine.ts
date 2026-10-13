@@ -1,5 +1,5 @@
 import { decodeFunctionData, Address } from 'viem';
-import { ParsedIntent, UserPolicy } from '../domain/schemas';
+import { ParsedIntent, UserPolicy, findTokenApprovalPolicy } from '../domain/schemas';
 import { parseTokenAmount } from '../utils/financial';
 import { TransactionCandidate, ERC20_ABI, MAX_UINT256, SUPPORTED_TOKENS } from '../transaction/builder';
 
@@ -10,9 +10,13 @@ export type PolicyDecision = {
 };
 
 /**
- * Deterministic Policy Engine (R5B)
+ * Deterministic Policy Engine (R5B / R7.1)
  * Evaluates high-level user intent AND actual compiled EVM TransactionCandidate.
- * Decodes candidate calldata to detect approval amount mismatches and blast radius exploits.
+ * Enforces:
+ * 1. Trusted contact address resolution
+ * 2. Native ETH transfer caps (never applied to ERC-20 tokens)
+ * 3. Token-specific approval policies (distinct allowance ceilings and allowed spenders per token)
+ * 4. EVM calldata decoding and intent-vs-calldata mismatch detection
  */
 export function evaluatePolicy(
   intent: ParsedIntent,
@@ -33,7 +37,7 @@ export function evaluatePolicy(
       };
     }
 
-    // 2. Spending Limits (ETH)
+    // 2. Spending Limits (Native ETH ONLY)
     if (intent.action === "TRANSFER" && intent.asset === "ETH") {
       if (intent.amount === "UNLIMITED") {
         return {
@@ -68,7 +72,7 @@ export function evaluatePolicy(
       }
     }
 
-    // 4. EVM Calldata Decoding & Approval Mismatch Detection (Fix VULN-R5-05)
+    // 4. EVM Calldata Decoding & Approval Mismatch Detection
     if (candidate && candidate.data && candidate.data.startsWith("0x095ea7b3")) {
       try {
         const decoded = decodeFunctionData({
@@ -86,6 +90,45 @@ export function evaluatePolicy(
               reason: "APPROVAL_RECIPIENT_MISMATCH: Candidate spender does not match recipient alias",
               resolvedAddress
             };
+          }
+
+          // Token-Specific Policy Check (if configured in user policy)
+          if (policy.tokenApprovalPolicies) {
+            const tokenPolicy = findTokenApprovalPolicy(policy, candidate.chainId, candidate.to);
+            if (!tokenPolicy) {
+              return {
+                status: "BLOCKED",
+                reason: `NO_TOKEN_APPROVAL_POLICY: No approval policy configured for token ${candidate.to} on chain ${candidate.chainId}. Approvals fail closed by default.`,
+                resolvedAddress
+              };
+            }
+
+            const isAllowedSpender = tokenPolicy.allowedSpenders.some(
+              (s) => s.toLowerCase() === spender.toLowerCase()
+            );
+            if (!isAllowedSpender) {
+              return {
+                status: "BLOCKED",
+                reason: `UNAUTHORIZED_SPENDER: Spender ${spender} is not authorized in token approval policy for ${candidate.to}.`,
+                resolvedAddress
+              };
+            }
+
+            const tokenCap = BigInt(tokenPolicy.maxApprovalAmountBaseUnits);
+            if (allowance === MAX_UINT256 && !tokenPolicy.allowUnlimited && !policy.allowUnlimitedApproval) {
+              return {
+                status: "BLOCKED",
+                reason: `UNLIMITED_APPROVAL_DISALLOWED: Unlimited approvals are prohibited for token ${candidate.to}.`,
+                resolvedAddress
+              };
+            }
+            if (allowance > tokenCap) {
+              return {
+                status: "BLOCKED",
+                reason: `APPROVAL_POLICY_CAP_EXCEEDED: Requested allowance of ${allowance} base units exceeds token policy cap of ${tokenPolicy.maxApprovalAmountBaseUnits}.`,
+                resolvedAddress
+              };
+            }
           }
 
           // Check if unlimited approval is requested in candidate calldata
