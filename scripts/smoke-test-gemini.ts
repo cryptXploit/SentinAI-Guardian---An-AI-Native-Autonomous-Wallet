@@ -82,11 +82,11 @@ async function main() {
     clearTimeout(timeoutId);
 
     const isAborted = abortController.signal.aborted;
-    const { classification, message } = classifyAiError(error, isAborted);
+    const { classification, message, httpStatus } = classifyAiError(error, isAborted);
 
-    console.error(`[RESULT] Status: FAILED`);
+    console.error(`[RESULT] Status: LIVE_AI_UNAVAILABLE`);
     console.error(`[LATENCY] ${latencyMs}ms`);
-    console.error(`[CLASSIFICATION] ${classification}`);
+    console.error(`[CLASSIFICATION] ${classification}${httpStatus ? ` (HTTP ${httpStatus})` : ''}`);
     console.error(`[ERROR_DETAIL] ${message.slice(0, 300)}`);
 
     process.exitCode = 1;

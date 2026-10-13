@@ -1,4 +1,4 @@
-import { Address, formatUnits } from 'viem';
+import { formatUnits, getAddress } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { getPublicClient, verifySepoliaConnection, getNativeBalance } from './rpc-service';
 import { SUPPORTED_TOKENS, TokenInfo } from '../transaction/builder';
@@ -218,10 +218,10 @@ export async function getLiveWalletOverview(options?: {
   const tokenPromises = tokenList.map(async (token): Promise<TokenBalance> => {
     try {
       const rawBalance = await client.readContract({
-        address: token.address as Address,
+        address: getAddress(token.address),
         abi: ERC20_BALANCE_ABI,
         functionName: 'balanceOf',
-        args: [address as Address],
+        args: [getAddress(address)],
       });
 
       const formatted = formatUnits(rawBalance, token.decimals);

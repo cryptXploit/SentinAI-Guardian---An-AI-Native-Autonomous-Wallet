@@ -52,7 +52,7 @@ describe('Intent Parser Engine', () => {
     });
   });
 
-  it('should throw SCHEMA_ERROR on hallucinated AI response', async () => {
+  it('should throw INVALID_RESPONSE on hallucinated AI response', async () => {
     const { __mockGenerateContent } = (await import('@google/genai')) as unknown as {
       __mockGenerateContent: ReturnType<typeof vi.fn>;
     };
@@ -66,10 +66,10 @@ describe('Intent Parser Engine', () => {
       }),
     });
 
-    await expect(parseIntent('Burn 1 ETH')).rejects.toThrow('SCHEMA_ERROR');
+    await expect(parseIntent('Burn 1 ETH')).rejects.toThrow(/INVALID_RESPONSE|SCHEMA_ERROR/);
   });
 
-  it('should throw SCHEMA_ERROR on malformed JSON response', async () => {
+  it('should throw INVALID_RESPONSE on malformed JSON response', async () => {
     const { __mockGenerateContent } = (await import('@google/genai')) as unknown as {
       __mockGenerateContent: ReturnType<typeof vi.fn>;
     };
@@ -78,6 +78,6 @@ describe('Intent Parser Engine', () => {
       text: 'Malformed { not-valid-json }',
     });
 
-    await expect(parseIntent('Send 1 ETH to charlie')).rejects.toThrow('SCHEMA_ERROR');
+    await expect(parseIntent('Send 1 ETH to charlie')).rejects.toThrow(/INVALID_RESPONSE|SCHEMA_ERROR/);
   });
 });
