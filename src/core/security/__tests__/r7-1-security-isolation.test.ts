@@ -13,8 +13,8 @@ import type { IntentIntegrityProof } from '../iip';
 import {
   testSecurityFixtureAction,
   authorizeAndExecute,
-  MOCK_USER_POLICY,
 } from '@/app/actions/orchestrator';
+import { MOCK_USER_POLICY } from '@/core/policy/user-policy';
 import * as auth from '../auth';
 import * as controller from '../../execution/controller';
 import { BroadcastError } from '../../execution/controller';
