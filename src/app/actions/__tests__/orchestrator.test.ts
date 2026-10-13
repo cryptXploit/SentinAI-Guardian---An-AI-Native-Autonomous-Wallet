@@ -498,4 +498,38 @@ describe('R5E — Orchestrator Two-Phase Authenticated Actions & Phased Executio
       expect(getProposalStatus(prepared.proposalId!)).toBe('CONFIRMED');
     });
   });
+
+  // ═══ Category H: Read-Only Query Routing (Milestone R6) ═══════════════════
+
+  describe('Category H — Read-Only Query Routing', () => {
+    it('H1: Balance query routes directly without creating proposal or touching signer', async () => {
+      vi.mocked(parseIntent).mockResolvedValueOnce({
+        action: 'QUERY_BALANCE',
+        asset: 'ETH',
+        amount: '0',
+        recipientAlias: '',
+      });
+
+      const result = await prepareTransactionIntent('Show my wallet balance');
+      expect(result.success).toBe(true);
+      expect(result.isQuery).toBe(true);
+      expect(result.queryResult?.action).toBe('QUERY_BALANCE');
+      expect(result.proposalId).toBeUndefined(); // Never creates proposal
+    });
+
+    it('H2: Network query routes directly without creating proposal', async () => {
+      vi.mocked(parseIntent).mockResolvedValueOnce({
+        action: 'QUERY_NETWORK',
+        asset: 'ETH',
+        amount: '0',
+        recipientAlias: '',
+      });
+
+      const result = await prepareTransactionIntent('What network is this?');
+      expect(result.success).toBe(true);
+      expect(result.isQuery).toBe(true);
+      expect(result.queryResult?.action).toBe('QUERY_NETWORK');
+      expect(result.proposalId).toBeUndefined(); // Never creates proposal
+    });
+  });
 });

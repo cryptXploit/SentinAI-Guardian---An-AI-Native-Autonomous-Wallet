@@ -1,7 +1,14 @@
 import { z } from 'zod';
 import { isValidEvmAddress } from '../utils/address';
 
-export const IntentActionSchema = z.enum(["TRANSFER", "APPROVE", "SWAP", "UNKNOWN"]);
+export const IntentActionSchema = z.enum([
+  'TRANSFER',
+  'APPROVE',
+  'SWAP',
+  'QUERY_BALANCE',
+  'QUERY_NETWORK',
+  'UNKNOWN',
+]);
 
 export const ParsedIntentSchema = z.object({
   action: IntentActionSchema,
@@ -14,13 +21,17 @@ export const UserPolicySchema = z.object({
   maxTransferAmountETH: z.string(),
   allowUnlimitedApproval: z.boolean(),
   trustedContacts: z.record(
-    z.string(), 
-    z.string().refine(isValidEvmAddress, { message: "Invalid EVM address" })
+    z.string(),
+    z.string().refine(isValidEvmAddress, { message: 'Invalid EVM address' })
   ),
 });
 
 export type IntentAction = z.infer<typeof IntentActionSchema>;
 export type ParsedIntent = z.infer<typeof ParsedIntentSchema>;
 export type UserPolicy = z.infer<typeof UserPolicySchema>;
+
+export function isReadOnlyAction(action: IntentAction): boolean {
+  return action === 'QUERY_BALANCE' || action === 'QUERY_NETWORK';
+}
 
 export type { IntentIntegrityProof } from '../security/iip';

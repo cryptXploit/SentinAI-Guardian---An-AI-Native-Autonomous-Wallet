@@ -58,7 +58,7 @@ export default function AgentConsole() {
             value={inputCommand}
             onChange={(e) => setInputCommand(e.target.value)}
             disabled={isProcessing || isAuthorizing}
-            placeholder="e.g., Send 0.05 ETH to alice"
+            placeholder="e.g., 'Show my balance' or 'Send 0.05 ETH to alice'"
             className="w-full bg-background border border-border rounded-lg pl-4 pr-12 py-3 text-foreground focus:outline-none focus:border-accent-blue focus:ring-1 focus:ring-accent-blue transition-all disabled:opacity-50"
           />
           <button
@@ -74,7 +74,7 @@ export default function AgentConsole() {
           <div className="mt-6 flex items-center gap-3 text-accent-blue">
             <Loader2 className="w-5 h-5 animate-spin" />
             <span className="text-sm font-medium animate-pulse">
-              Phase 1: Verifying Intent &amp; Running EVM Dry-Run...
+              Phase 1: Analyzing Intent &amp; Evaluating Security Policy...
             </span>
           </div>
         )}

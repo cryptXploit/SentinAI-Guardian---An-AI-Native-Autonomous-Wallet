@@ -18,6 +18,7 @@ vi.mock('@google/generative-ai', () => {
 describe('Intent Parser Engine', () => {
   beforeEach(() => {
     process.env.GEMINI_API_KEY = "test-gemini-key";
+    process.env.AI_PROVIDER = "gemini";
   });
 
   it('should return a valid ParsedIntent on successful AI generation', async () => {

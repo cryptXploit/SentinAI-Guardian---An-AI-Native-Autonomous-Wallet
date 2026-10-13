@@ -6,8 +6,10 @@ import { buildTransaction, TransactionCandidate } from "@/core/transaction/build
 import { simulateTransaction } from "@/core/security/simulator";
 import { generateIIP, verifyIIPDigest } from "@/core/security/iip";
 import { broadcastTransaction, waitForReceipt, ExecutionResult } from "@/core/execution/controller";
-import { UserPolicy } from "@/core/domain/schemas";
+import { UserPolicy, isReadOnlyAction } from "@/core/domain/schemas";
 import { verifySession } from "@/core/security/auth";
+import { getLiveWalletOverview, WalletOverview } from "@/core/web3/wallet-service";
+import { verifySepoliaConnection, RpcConnectionStatus } from "@/core/web3/rpc-service";
 import {
   storeProposal,
   retrieveProposal,
@@ -38,8 +40,17 @@ export type ProposalSummary = {
   proofDigest: string;
 };
 
+export type QueryResult = {
+  action: 'QUERY_BALANCE' | 'QUERY_NETWORK';
+  summary: string;
+  overview?: WalletOverview;
+  connection?: RpcConnectionStatus;
+};
+
 export type PrepareResult = {
   success: boolean;
+  isQuery?: boolean;
+  queryResult?: QueryResult;
   proposalId?: string;
   summary?: ProposalSummary;
   error?: string;
@@ -54,9 +65,9 @@ export type AuthorizeResult = {
 };
 
 /**
- * Phase 1: Intent Preparation & Proposal Creation (R5D — Owner-Bound, Expiring)
- * Pipeline: Parse -> Resolve -> Build -> Simulate -> Policy -> IIP -> Store
- * Returns ONLY proposalId and sanitized summary. Never leaks raw IIP.
+ * Phase 1: Intent Preparation & Proposal Creation (R5D/R6 — Query-Aware, Owner-Bound, Expiring)
+ * Pipeline: Parse -> If Read-Only Query: Route Immediately -> Else: Resolve -> Build -> Simulate -> Policy -> IIP -> Store
+ * Returns ONLY proposalId and sanitized summary for transactions, or queryResult for read-only actions.
  */
 export async function prepareTransactionIntent(command: string): Promise<PrepareResult> {
   // Authentication Barrier
@@ -68,10 +79,42 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
   let currentStep = "INTENT_PARSING";
 
   try {
-    // Step 1: Parse Intent (M2)
+    // Step 1: Parse Intent (M2/R6)
     const intent = await parseIntent(command);
 
-    // Step 2: Resolve Recipient
+    // Read-Only Query Routing (Milestone R6)
+    // Read-only queries NEVER access private keys or create transaction proposals
+    if (isReadOnlyAction(intent.action)) {
+      if (intent.action === 'QUERY_BALANCE') {
+        const overview = await getLiveWalletOverview();
+        const tokenSummaries = overview.tokens
+          .map((t) => `${t.formattedBalance} ${t.symbol}`)
+          .join(', ');
+        return {
+          success: true,
+          isQuery: true,
+          queryResult: {
+            action: 'QUERY_BALANCE',
+            summary: `Wallet balance on Sepolia: ${overview.nativeBalance.formatted} ETH (${tokenSummaries})`,
+            overview,
+          },
+        };
+      } else if (intent.action === 'QUERY_NETWORK') {
+        const connection = await verifySepoliaConnection();
+        const blockInfo = connection.latestBlock ? ` (Block #${connection.latestBlock})` : '';
+        return {
+          success: true,
+          isQuery: true,
+          queryResult: {
+            action: 'QUERY_NETWORK',
+            summary: `Connected to Ethereum Sepolia Testnet [Chain ID: ${connection.chainId}]${blockInfo} - Status: ${connection.status}`,
+            connection,
+          },
+        };
+      }
+    }
+
+    // Step 2: Resolve Recipient (State-changing actions only)
     currentStep = "RECIPIENT_RESOLUTION";
     const resolvedAddress = MOCK_USER_POLICY.trustedContacts[intent.recipientAlias];
     if (!resolvedAddress) {

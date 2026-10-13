@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, ChevronDown, ChevronUp, ShieldX, ShieldCheck, ArrowRight, Loader2, Clock } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp, ShieldX, ShieldCheck, ArrowRight, Loader2, Clock, Wallet, Coins, Activity } from "lucide-react";
 import { PrepareResult, AuthorizeResult } from "@/app/actions/orchestrator";
 
 interface EvidencePanelProps {
@@ -21,6 +21,67 @@ export default function EvidencePanel({
 
   if (!prepareResult && !executionResult) {
     return null;
+  }
+
+  // Phase 0: Read-Only Financial Intelligence Query (Milestone R6)
+  if (prepareResult?.isQuery && prepareResult.queryResult) {
+    const q = prepareResult.queryResult;
+    const isBalance = q.action === 'QUERY_BALANCE';
+
+    return (
+      <div className="border border-accent-blue/30 bg-surface rounded-xl overflow-hidden shadow-lg">
+        <div className="p-6">
+          <div className="flex items-start gap-4">
+            <div className="mt-1">
+              {isBalance ? (
+                <div className="p-2.5 rounded-xl bg-accent-blue/10 text-accent-blue">
+                  <Wallet className="w-6 h-6" />
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-xl bg-accent-blue/10 text-accent-blue">
+                  <Activity className="w-6 h-6" />
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-foreground">
+                  {isBalance ? "Live Wallet Intelligence" : "Sepolia Network Status"}
+                </h3>
+                <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-accent-blue/10 text-accent-blue border border-accent-blue/20">
+                  READ-ONLY · NO SIGNER REQUIRED
+                </span>
+              </div>
+
+              <p className="text-sm text-gray-300 mt-2">{q.summary}</p>
+
+              {isBalance && q.overview && (
+                <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-3 bg-background rounded-lg border border-border">
+                    <p className="text-xs text-gray-400 font-medium">Native ETH</p>
+                    <p className="text-lg font-semibold mt-1 tabular-nums">{q.overview.nativeBalance.formatted} ETH</p>
+                  </div>
+                  {q.overview.tokens.map((token) => (
+                    <div key={token.symbol} className="p-3 bg-background rounded-lg border border-border">
+                      <p className="text-xs text-gray-400 font-medium">{token.symbol}</p>
+                      <p className="text-lg font-semibold mt-1 tabular-nums">{token.formattedBalance} {token.symbol}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {q.overview?.latestBlock && (
+                <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
+                  <Coins className="w-3.5 h-3.5" />
+                  <span>Sepolia Block #{q.overview.latestBlock.toString()} · Data verified on-chain</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // Phase 2 Completed: Execution outcome

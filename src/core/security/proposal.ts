@@ -38,6 +38,25 @@ export const TERMINAL_STATES: ReadonlySet<ProposalStatus> = new Set([
   'FAILED_BEFORE_BROADCAST',
 ]);
 
+/**
+ * Explicit state transition matrix enforcing permitted lifecycle transitions.
+ * Arbitrary transitions (e.g. SUBMITTED -> PREPARED or CONFIRMED -> SUBMITTING) are strictly forbidden.
+ */
+export const ALLOWED_STATUS_TRANSITIONS: Readonly<Record<ProposalStatus, ReadonlySet<ProposalStatus>>> = {
+  PREPARED: new Set(['AUTHORIZED', 'CANCELLED', 'EXPIRED']),
+  AUTHORIZED: new Set(['SUBMITTING', 'CANCELLED', 'EXPIRED']),
+  SUBMITTING: new Set(['SUBMITTED', 'CONFIRMED', 'REVERTED', 'FAILED_BEFORE_BROADCAST', 'FAILED', 'RECONCILIATION_REQUIRED', 'EXECUTION_UNKNOWN']),
+  SUBMITTED: new Set(['CONFIRMED', 'REVERTED', 'RECONCILIATION_REQUIRED', 'EXECUTION_UNKNOWN']),
+  RECONCILIATION_REQUIRED: new Set(['CONFIRMED', 'REVERTED', 'FAILED']),
+  EXECUTION_UNKNOWN: new Set(['CONFIRMED', 'REVERTED', 'FAILED']),
+  CONFIRMED: new Set([]),
+  REVERTED: new Set([]),
+  FAILED: new Set([]),
+  EXPIRED: new Set([]),
+  CANCELLED: new Set([]),
+  FAILED_BEFORE_BROADCAST: new Set([]),
+};
+
 // Default proposal lifetime: 15 minutes
 export const DEFAULT_PROPOSAL_LIFETIME_MS = 15 * 60 * 1000;
 
@@ -61,6 +80,21 @@ function getDb(): Database.Database {
     migrateSchema(_db, dbPath);
   }
   return _db;
+}
+
+/**
+ * Safely creates a backup of a live WAL-mode SQLite database.
+ * Checkpoints WAL first to flush committed frames into the main database file before copying.
+ */
+export function backupDatabase(destinationPath: string): void {
+  const db = getDb();
+  const dbPath = resolveDatabasePath();
+  if (dbPath === ':memory:') {
+    throw new Error('CANNOT_BACKUP_MEMORY_DB: Backup requires a persistent database file.');
+  }
+  // Checkpoint WAL frames to guarantee consistent backup
+  db.pragma('wal_checkpoint(TRUNCATE)');
+  fs.copyFileSync(dbPath, destinationPath);
 }
 
 export function migrateSchema(db: Database.Database, dbPath?: string): void {
@@ -89,6 +123,7 @@ export function migrateSchema(db: Database.Database, dbPath?: string): void {
   // Backup file database before non-destructive migration
   if (dbPath && dbPath !== ':memory:' && fs.existsSync(dbPath)) {
     try {
+      db.pragma('wal_checkpoint(TRUNCATE)');
       const backupPath = `${dbPath}.bak.${Date.now()}`;
       fs.copyFileSync(dbPath, backupPath);
     } catch {
@@ -116,8 +151,6 @@ export function migrateSchema(db: Database.Database, dbPath?: string): void {
       `);
     } else if (currentVersion === 1) {
       // Non-destructive migration from v1 (R5C schema):
-      // v1 schema: proposals(id TEXT PRIMARY KEY, iip_data TEXT NOT NULL, status TEXT, created_at DATETIME)
-      // Preserves existing proposals, transaction hashes, execution statuses, and confirmed history.
       const columns = db.prepare("PRAGMA table_info(proposals)").all() as Array<{ name: string }>;
       const columnNames = new Set(columns.map((c) => c.name));
 
@@ -255,9 +288,10 @@ export function retrieveProposal(proposalId: string): ProposalRecord | undefined
 
 /**
  * Checks if a proposal has expired based on its expires_at field.
- * Handles both ISO 8601 strings and Unix timestamps with millisecond accuracy.
+ * Handles UTC ISO 8601 strings with exact millisecond precision.
+ * Exact boundary (referenceTimeMs >= expiry) is rejected.
  */
-export function isProposalExpired(proposalId: string): boolean {
+export function isProposalExpired(proposalId: string, referenceTimeMs: number = Date.now()): boolean {
   const db = getDb();
   const row = db.prepare('SELECT expires_at FROM proposals WHERE id = ?').get(proposalId) as
     | { expires_at: string | number }
@@ -265,12 +299,13 @@ export function isProposalExpired(proposalId: string): boolean {
   if (!row) return true;
   const expiry = typeof row.expires_at === 'number' ? row.expires_at : new Date(row.expires_at).getTime();
   if (isNaN(expiry)) return true;
-  return Date.now() >= expiry;
+  return referenceTimeMs >= expiry;
 }
 
 /**
  * Atomically transitions a proposal from PREPARED to AUTHORIZED.
  * Requires owner match and proposal must not be expired.
+ * Preserves millisecond precision via ISO string comparison.
  */
 export function authorizeProposal(proposalId: string, ownerId: string): boolean {
   const db = getDb();
@@ -279,7 +314,7 @@ export function authorizeProposal(proposalId: string, ownerId: string): boolean 
     `UPDATE proposals
      SET status = 'AUTHORIZED', authorized_at = ?, updated_at = ?
      WHERE id = ? AND owner_id = ? AND status = 'PREPARED'
-     AND datetime(expires_at) > datetime(?)`
+     AND expires_at > ?`
   ).run(now, now, proposalId, ownerId, now);
   return result.changes === 1;
 }
@@ -295,7 +330,7 @@ export function lockProposalForExecution(proposalId: string, ownerId: string): b
     `UPDATE proposals
      SET status = 'SUBMITTING', updated_at = ?
      WHERE id = ? AND owner_id = ? AND status = 'AUTHORIZED'
-     AND datetime(expires_at) > datetime(?)`
+     AND expires_at > ?`
   ).run(now, proposalId, ownerId, now);
   return result.changes === 1;
 }
@@ -306,6 +341,9 @@ export function lockProposalForExecution(proposalId: string, ownerId: string): b
  */
 export function markSubmitted(proposalId: string, txHash: string): boolean {
   const db = getDb();
+  const current = getProposalStatus(proposalId);
+  if (current !== 'SUBMITTING') return false;
+
   const result = db.prepare(
     `UPDATE proposals
      SET status = 'SUBMITTED', tx_hash = ?, updated_at = datetime('now')
@@ -325,18 +363,27 @@ export function recordTxHash(proposalId: string, txHash: string): void {
 }
 
 /**
- * Updates the terminal status of a proposal after execution completes.
- * Allows transition FROM 'SUBMITTING' or 'SUBMITTED' to a terminal state.
+ * Updates the status of a proposal after execution or exception.
+ * Validates transition against the explicit ALLOWED_STATUS_TRANSITIONS matrix.
+ * Arbitrary or retrograde transitions are strictly rejected.
  */
 export function updateProposalStatus(
   proposalId: string,
-  status: ProposalStatus
+  targetStatus: ProposalStatus
 ): boolean {
   const db = getDb();
+  const current = getProposalStatus(proposalId);
+  if (!current) return false;
+
+  const allowed = ALLOWED_STATUS_TRANSITIONS[current];
+  if (!allowed || !allowed.has(targetStatus)) {
+    return false;
+  }
+
   const result = db.prepare(
     `UPDATE proposals SET status = ?, updated_at = datetime('now')
-     WHERE id = ? AND status IN ('SUBMITTING', 'SUBMITTED', 'RECONCILIATION_REQUIRED', 'EXECUTION_UNKNOWN')`
-  ).run(status, proposalId);
+     WHERE id = ? AND status = ?`
+  ).run(targetStatus, proposalId, current);
   return result.changes === 1;
 }
 
@@ -361,7 +408,7 @@ export function expireStaleProposals(): number {
   const result = db.prepare(
     `UPDATE proposals SET status = 'EXPIRED', updated_at = datetime('now')
      WHERE status IN ('PREPARED', 'AUTHORIZED')
-     AND datetime(expires_at) <= datetime(?)`
+     AND expires_at <= ?`
   ).run(now);
   return result.changes;
 }
@@ -420,16 +467,24 @@ export function reconcileProposal(
   txHash?: string
 ): boolean {
   const db = getDb();
+  const current = getProposalStatus(proposalId);
+  if (!current) return false;
+
+  const allowed = ALLOWED_STATUS_TRANSITIONS[current];
+  if (!allowed || !allowed.has(status)) {
+    return false;
+  }
+
   const stmt = txHash
     ? db.prepare(
         `UPDATE proposals SET status = ?, tx_hash = COALESCE(tx_hash, ?), updated_at = datetime('now')
-         WHERE id = ? AND status IN ('SUBMITTING', 'SUBMITTED', 'RECONCILIATION_REQUIRED', 'EXECUTION_UNKNOWN')`
+         WHERE id = ? AND status = ?`
       )
     : db.prepare(
         `UPDATE proposals SET status = ?, updated_at = datetime('now')
-         WHERE id = ? AND status IN ('SUBMITTING', 'SUBMITTED', 'RECONCILIATION_REQUIRED', 'EXECUTION_UNKNOWN')`
+         WHERE id = ? AND status = ?`
       );
-  const result = txHash ? stmt.run(status, txHash, proposalId) : stmt.run(status, proposalId);
+  const result = txHash ? stmt.run(status, txHash, proposalId, current) : stmt.run(status, proposalId, current);
   return result.changes === 1;
 }
 
