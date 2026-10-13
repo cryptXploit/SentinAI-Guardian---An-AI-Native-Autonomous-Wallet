@@ -28,8 +28,37 @@ export async function processAgentCommand(command: string) {
     currentStep = "POLICY_EVALUATION";
     const policyDecision = evaluatePolicy(intent, MOCK_USER_POLICY);
     
+    // Explicitly enforce fail-closed check on policy status (Fix VULN-07)
+    if (policyDecision.status !== "ALLOW") {
+      const blockedIIP = generateIIP(
+        intent,
+        {
+          to: policyDecision.resolvedAddress || "0x0000000000000000000000000000000000000000",
+          value: BigInt(0),
+          chainId: 11155111
+        },
+        policyDecision,
+        {
+          success: false,
+          revertReason: `Policy blocked execution: ${policyDecision.reason}`,
+          timestamp: new Date().toISOString()
+        }
+      );
+
+      return {
+        success: false,
+        error: `Policy Blocked: ${policyDecision.reason}`,
+        step: "POLICY_EVALUATION",
+        iip: blockedIIP,
+        executionResult: {
+          success: false,
+          error: `Policy Blocked: ${policyDecision.reason}`
+        }
+      };
+    }
+
     if (!policyDecision.resolvedAddress) {
-       throw new Error(`Policy Blocked: ${policyDecision.reason}`);
+      throw new Error(`Policy Blocked: ${policyDecision.reason}`);
     }
 
     // Step 3: Build (M4)
@@ -38,7 +67,10 @@ export async function processAgentCommand(command: string) {
 
     // Step 4: Simulate (M5)
     currentStep = "SIMULATION";
-    const rpcUrl = process.env.RPC_URL || "";
+    const rpcUrl = process.env.RPC_URL;
+    if (!rpcUrl) {
+      throw new Error("SIMULATION_UNAVAILABLE: Cannot dry-run transaction without RPC URL.");
+    }
     const simulation = await simulateTransaction(candidate, rpcUrl);
 
     // Step 5: IIP (M6)
@@ -49,21 +81,28 @@ export async function processAgentCommand(command: string) {
     currentStep = "EXECUTION";
     let executionResult = null;
     if (iip.finalDecision === "ALLOW_FOR_AUTHORIZATION") {
-      const privateKey = process.env.AGENT_PRIVATE_KEY || "";
+      const privateKey = process.env.AGENT_PRIVATE_KEY;
+      if (!privateKey) {
+        throw new Error("MISSING_CREDENTIALS: Real execution requires configured private key and RPC URL.");
+      }
       executionResult = await executeTransaction(iip, privateKey, rpcUrl);
+      return {
+        success: executionResult.success,
+        iip,
+        executionResult
+      };
     } else {
-      // If blocked, we might just return the IIP so the frontend can display the block reason
-      executionResult = {
+      return {
         success: false,
-        error: "Blocked by Intent Integrity Proof",
+        error: simulation.revertReason || "Blocked by Intent Integrity Proof",
+        step: simulation.success ? "IIP_GENERATION" : "SIMULATION",
+        iip,
+        executionResult: {
+          success: false,
+          error: simulation.revertReason || "Blocked by Intent Integrity Proof",
+        }
       };
     }
-
-    return {
-      success: true,
-      iip,
-      executionResult
-    };
 
   } catch (error) {
     return {

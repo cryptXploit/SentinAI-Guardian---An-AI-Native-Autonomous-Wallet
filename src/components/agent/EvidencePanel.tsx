@@ -6,7 +6,11 @@ import { CheckCircle2, ChevronDown, ChevronUp, ShieldX } from "lucide-react";
 export default function EvidencePanel({ result }: { result: any }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const isSuccess = result.success;
+  // Fix VULN-03: Evaluate actual authorization and execution success, not just server action response
+  const isSuccess =
+    result?.success === true &&
+    result?.iip?.finalDecision === "ALLOW_FOR_AUTHORIZATION" &&
+    result?.executionResult?.success === true;
 
   return (
     <div className={`border rounded-xl overflow-hidden ${isSuccess ? 'border-success/20 bg-success/5' : 'border-danger/20 bg-danger/5'}`}>
@@ -31,7 +35,7 @@ export default function EvidencePanel({ result }: { result: any }) {
             ) : (
               <div className="mt-2 space-y-1">
                 <p className="text-sm text-gray-300">
-                  <span className="font-medium text-gray-400">Error:</span> {result.error || "Unknown error"}
+                  <span className="font-medium text-gray-400">Error:</span> {result.error || result.executionResult?.error || "Transaction blocked"}
                 </p>
                 {result.step && (
                   <p className="text-sm text-gray-300">

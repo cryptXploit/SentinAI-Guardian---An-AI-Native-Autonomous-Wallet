@@ -21,12 +21,7 @@ export async function executeTransaction(
   }
 
   if (!privateKey || !rpcUrl) {
-    // Test mode / Mock fallback
-    return {
-      success: true,
-      transactionHash: "0xmockedhash000000000000000000000000000000000000000000000000000000",
-      receiptStatus: "success"
-    };
+    throw new Error("MISSING_CREDENTIALS: Real execution requires configured private key and RPC URL.");
   }
 
   try {

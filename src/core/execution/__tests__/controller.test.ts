@@ -27,10 +27,18 @@ describe('Execution Controller', () => {
     finalDecision: "ALLOW_FOR_AUTHORIZATION"
   };
 
-  it('should return mocked success if privateKey or rpcUrl are missing', async () => {
-    const result = await executeTransaction(dummyIIP, "", "");
-    expect(result.success).toBe(true);
-    expect(result.transactionHash).toContain("0xmockedhash");
+  it('should throw MISSING_CREDENTIALS if privateKey or rpcUrl are missing', async () => {
+    await expect(executeTransaction(dummyIIP, "", ""))
+      .rejects
+      .toThrow("MISSING_CREDENTIALS: Real execution requires configured private key and RPC URL.");
+
+    await expect(executeTransaction(dummyIIP, "0xPrivateKey", ""))
+      .rejects
+      .toThrow("MISSING_CREDENTIALS: Real execution requires configured private key and RPC URL.");
+
+    await expect(executeTransaction(dummyIIP, "", "http://rpc.url"))
+      .rejects
+      .toThrow("MISSING_CREDENTIALS: Real execution requires configured private key and RPC URL.");
   });
 
   it('Critical Security Test: should throw UNAUTHORIZED_EXECUTION if IIP is BLOCKED', async () => {

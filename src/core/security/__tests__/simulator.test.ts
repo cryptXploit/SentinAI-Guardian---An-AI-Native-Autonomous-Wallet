@@ -17,11 +17,14 @@ describe('Transaction Simulation Engine', () => {
     chainId: 11155111
   };
 
-  it('should return deterministic fallback when no RPC URL is provided', async () => {
-    const result = await simulateTransaction(dummyCandidate);
-    expect(result.success).toBe(true);
-    expect(result.gasEstimated).toBe(BigInt("21000"));
-    expect(result.timestamp).toBeDefined();
+  it('should throw SIMULATION_UNAVAILABLE when no RPC URL is provided', async () => {
+    await expect(simulateTransaction(dummyCandidate))
+      .rejects
+      .toThrow("SIMULATION_UNAVAILABLE: Cannot dry-run transaction without RPC URL.");
+
+    await expect(simulateTransaction(dummyCandidate, ""))
+      .rejects
+      .toThrow("SIMULATION_UNAVAILABLE: Cannot dry-run transaction without RPC URL.");
   });
 
   it('should return success and gas on valid viem RPC simulation', async () => {

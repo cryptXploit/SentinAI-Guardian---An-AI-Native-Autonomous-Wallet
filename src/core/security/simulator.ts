@@ -15,32 +15,27 @@ export async function simulateTransaction(
 ): Promise<SimulationResult> {
   const timestamp = new Date().toISOString();
 
+  if (!rpcUrl) {
+    throw new Error("SIMULATION_UNAVAILABLE: Cannot dry-run transaction without RPC URL.");
+  }
+
   try {
-    if (rpcUrl) {
-      const publicClient = createPublicClient({
-        chain: sepolia,
-        transport: http(rpcUrl)
-      });
+    const publicClient = createPublicClient({
+      chain: sepolia,
+      transport: http(rpcUrl)
+    });
 
-      const gasEstimated = await publicClient.estimateGas({
-        to: candidate.to as Address,
-        value: candidate.value,
-        data: (candidate.data as `0x${string}`) || '0x'
-      });
+    const gasEstimated = await publicClient.estimateGas({
+      to: candidate.to as Address,
+      value: candidate.value,
+      data: (candidate.data as `0x${string}`) || '0x'
+    });
 
-      return {
-        success: true,
-        gasEstimated,
-        timestamp
-      };
-    } else {
-      // Deterministic fallback for disconnected/test environments
-      return {
-        success: true,
-        gasEstimated: BigInt("21000"), // standard ETH transfer
-        timestamp
-      };
-    }
+    return {
+      success: true,
+      gasEstimated,
+      timestamp
+    };
   } catch (error) {
     return {
       success: false,
