@@ -42,6 +42,5 @@ yarn-error.log*
 next-env.d.ts
 
 # sqlite
-sentinai.db
-sentinai.db-journal
-sentinai.db-wal
+sentinai.db*
+

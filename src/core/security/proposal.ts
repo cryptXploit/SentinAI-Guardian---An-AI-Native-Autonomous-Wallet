@@ -74,13 +74,26 @@ export function resolveDatabasePath(): string {
 
 let _db: Database.Database | null = null;
 
-function getDb(): Database.Database {
+export function ensureSessionsTable(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      token TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+  `);
+}
+
+export function getDb(): Database.Database {
   if (!_db) {
     const dbPath = resolveDatabasePath();
     _db = new Database(dbPath);
     _db.pragma('journal_mode = WAL');
     _db.pragma('busy_timeout = 5000');
     migrateSchema(_db, dbPath);
+    ensureSessionsTable(_db);
   }
   return _db;
 }
@@ -118,6 +131,7 @@ export function migrateSchema(db: Database.Database, dbPath?: string): void {
   }
 
   if (currentVersion === SCHEMA_VERSION) {
+    ensureSessionsTable(db);
     return;
   }
 
@@ -199,6 +213,7 @@ export function migrateSchema(db: Database.Database, dbPath?: string): void {
   });
 
   runMigration();
+  ensureSessionsTable(db);
 }
 
 // ─── Serialization ──────────────────────────────────────────────────────────
