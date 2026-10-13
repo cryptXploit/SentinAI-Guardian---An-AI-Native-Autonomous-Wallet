@@ -4,13 +4,14 @@ import {
   authorizeAndExecute,
   _resetExecutedDigestsForTesting
 } from '../orchestrator';
-import { generateIIP, IntentIntegrityProof } from '@/core/security/iip';
-import { ParsedIntent } from '@/core/domain/schemas';
-import { TransactionCandidate } from '@/core/transaction/builder';
-import { PolicyDecision } from '@/core/policy/engine';
-import { SimulationResult } from '@/core/security/simulator';
+import { _resetProposalsForTesting, retrieveProposal } from '@/core/security/proposal';
+import { verifySession } from '@/core/security/auth';
 
 // Mock dependencies
+vi.mock('@/core/security/auth', () => ({
+  verifySession: vi.fn(),
+}));
+
 vi.mock('@/core/ai/intent-parser', () => ({
   parseIntent: vi.fn().mockResolvedValue({
     action: "TRANSFER",
@@ -36,82 +37,93 @@ vi.mock('@/core/execution/controller', () => ({
   })
 }));
 
-describe('Orchestrator Two-Phase Actions', () => {
-  beforeEach(() => {
+describe('Orchestrator Two-Phase Authenticated Actions (R5A)', () => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    _resetExecutedDigestsForTesting();
+    await _resetExecutedDigestsForTesting();
+    _resetProposalsForTesting();
     process.env.RPC_URL = "https://sepolia.mock.rpc";
     process.env.AGENT_PRIVATE_KEY = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    
+    // Default to authenticated session
+    (verifySession as any).mockResolvedValue({ userId: "operator-1" });
   });
 
-  const dummyIntent: ParsedIntent = {
-    action: "TRANSFER",
-    asset: "ETH",
-    amount: "0.05",
-    recipientAlias: "alice"
-  };
+  it('Negative Test 1: should reject authorizeAndExecute with UNAUTHORIZED_ACCESS if session is invalid', async () => {
+    // 1. Prepare intent with authenticated session
+    const prepared = await prepareTransactionIntent("Send 0.05 ETH to alice");
+    expect(prepared.success).toBe(true);
+    expect(prepared.proposalId).toBeDefined();
 
-  const dummyCandidate: TransactionCandidate = {
-    to: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-    value: BigInt("50000000000000000"),
-    chainId: 11155111
-  };
+    // 2. Mock session to return null (unauthorized)
+    (verifySession as any).mockResolvedValue(null);
 
-  const dummyPolicy: PolicyDecision = {
-    status: "ALLOW",
-    reason: "Policy requirements met",
-    resolvedAddress: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
-  };
+    // 3. Attempt authorization
+    await expect(authorizeAndExecute(prepared.proposalId!))
+      .rejects
+      .toThrow("UNAUTHORIZED_ACCESS");
+  });
 
-  const dummySimulation: SimulationResult = {
-    success: true,
-    gasEstimated: BigInt(21000),
-    timestamp: "now"
-  };
+  it('Negative Test 2: should reject authorizeAndExecute with UNKNOWN_PROPOSAL if proposalId does not exist', async () => {
+    const bogusProposalId = "0x9999999999999999999999999999999999999999999999999999999999999999";
 
-  it('Phase 1: prepareTransactionIntent should prepare IIP without executing', async () => {
-    const { executeTransaction } = await import('@/core/execution/controller');
+    await expect(authorizeAndExecute(bogusProposalId))
+      .rejects
+      .toThrow("UNKNOWN_PROPOSAL");
+  });
 
+  it('Negative Test 3: prepareTransactionIntent must NOT leak raw IIP or candidate parameters', async () => {
     const result = await prepareTransactionIntent("Send 0.05 ETH to alice");
 
     expect(result.success).toBe(true);
-    expect(result.iip).toBeDefined();
-    expect(result.iip?.finalDecision).toBe("ALLOW_FOR_AUTHORIZATION");
-    expect(result.iip?.proofDigest).toMatch(/^0x[a-fA-F0-9]{64}$/);
+    expect(result.proposalId).toBeDefined();
+    expect(result.summary).toBeDefined();
 
-    // Assert that Phase 1 DOES NOT execute transaction
-    expect(executeTransaction).not.toHaveBeenCalled();
+    // Assert that raw candidate and raw IIP internals are NOT present in the client payload
+    expect((result as any).iip).toBeUndefined();
+    expect((result as any).candidate).toBeUndefined();
+
+    // Summary contains only safe display fields
+    expect(result.summary?.action).toBe("TRANSFER");
+    expect(result.summary?.asset).toBe("ETH");
+    expect(result.summary?.amount).toBe("0.05");
+    expect(result.summary?.recipientAddress).toBe("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
   });
 
-  it('Phase 2: authorizeAndExecute should reject tampered IIP (Security Gate 1)', async () => {
-    const validIIP = generateIIP(dummyIntent, dummyCandidate, dummyPolicy, dummySimulation);
+  it('Positive Test 4: End-to-end two-phase preparation and execution with server-stored proposal', async () => {
+    const prepared = await prepareTransactionIntent("Send 0.05 ETH to alice");
+    expect(prepared.success).toBe(true);
+    expect(prepared.proposalId).toBeDefined();
 
-    // Tamper with value
-    const tamperedIIP: IntentIntegrityProof = {
-      ...validIIP,
-      candidate: {
-        ...validIIP.candidate,
-        value: BigInt("99990000000000000000") // 99.99 ETH
-      }
-    };
-
-    const result = await authorizeAndExecute(tamperedIIP);
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("TAMPERED_PAYLOAD");
+    const executed = await authorizeAndExecute(prepared.proposalId!);
+    expect(executed.success).toBe(true);
+    expect(executed.proposalId).toBe(prepared.proposalId);
+    expect(executed.executionResult?.transactionHash).toBeDefined();
   });
 
-  it('Phase 2: authorizeAndExecute should prevent duplicate execution on same digest (Security Gate 2 Idempotency)', async () => {
-    const validIIP = generateIIP(dummyIntent, dummyCandidate, dummyPolicy, dummySimulation);
+  it('Negative Test 5: authorizeAndExecute should reject tampered proposal payload (Security Gate 1)', async () => {
+    const prepared = await prepareTransactionIntent("Send 0.05 ETH to alice");
+    const stored = retrieveProposal(prepared.proposalId!);
+    expect(stored).toBeDefined();
 
-    // First execution: should succeed
-    const firstAttempt = await authorizeAndExecute(validIIP);
-    expect(firstAttempt.success).toBe(true);
-    expect(firstAttempt.executionResult?.transactionHash).toBeDefined();
+    // Tamper with the candidate value in the stored proposal
+    stored!.candidate.value = BigInt("99990000000000000000");
 
-    // Duplicate replay execution: MUST fail with DUPLICATE_EXECUTION
-    const secondAttempt = await authorizeAndExecute(validIIP);
-    expect(secondAttempt.success).toBe(false);
-    expect(secondAttempt.error).toContain("DUPLICATE_EXECUTION");
+    await expect(authorizeAndExecute(prepared.proposalId!))
+      .rejects
+      .toThrow("TAMPERED_PAYLOAD");
+  });
+
+  it('Negative Test 6: authorizeAndExecute must prevent duplicate execution on same proposal (Security Gate 2 Idempotency)', async () => {
+    const prepared = await prepareTransactionIntent("Send 0.05 ETH to alice");
+
+    // First execution succeeds
+    const firstRun = await authorizeAndExecute(prepared.proposalId!);
+    expect(firstRun.success).toBe(true);
+
+    // Duplicate replay execution on same proposal throws DUPLICATE_EXECUTION
+    await expect(authorizeAndExecute(prepared.proposalId!))
+      .rejects
+      .toThrow("DUPLICATE_EXECUTION");
   });
 });

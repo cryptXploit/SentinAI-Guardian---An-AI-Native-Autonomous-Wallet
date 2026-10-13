@@ -4,9 +4,11 @@ import { parseIntent } from "@/core/ai/intent-parser";
 import { evaluatePolicy } from "@/core/policy/engine";
 import { buildTransaction } from "@/core/transaction/builder";
 import { simulateTransaction } from "@/core/security/simulator";
-import { generateIIP, verifyIIPDigest, IntentIntegrityProof } from "@/core/security/iip";
+import { generateIIP, verifyIIPDigest } from "@/core/security/iip";
 import { executeTransaction, ExecutionResult } from "@/core/execution/controller";
 import { UserPolicy } from "@/core/domain/schemas";
+import { verifySession } from "@/core/security/auth";
+import { storeProposal, retrieveProposal } from "@/core/security/proposal";
 
 const MOCK_USER_POLICY: UserPolicy = {
   maxTransferAmountETH: "1.0",
@@ -20,26 +22,44 @@ const MOCK_USER_POLICY: UserPolicy = {
 // Module-level idempotency store (Fix VULN-06)
 const executedDigests = new Set<string>();
 
+export type ProposalSummary = {
+  action: string;
+  asset: string;
+  amount: string;
+  recipientAlias: string;
+  recipientAddress: string;
+  gasEstimated?: string;
+  proofDigest: string;
+};
+
 export type PrepareResult = {
   success: boolean;
-  iip?: IntentIntegrityProof;
+  proposalId?: string;
+  summary?: ProposalSummary;
   error?: string;
   step?: string;
 };
 
 export type AuthorizeResult = {
   success: boolean;
-  iip?: IntentIntegrityProof;
+  proposalId?: string;
   executionResult?: ExecutionResult;
   error?: string;
 };
 
 /**
- * Phase 1: Intent Preparation
- * Parses intent, evaluates policy, builds candidate, simulates execution, and produces IIP.
- * Strictly DOES NOT execute transaction.
+ * Phase 1: Intent Preparation & Proposal Creation (Server-Owned)
+ * Authenticates session, parses intent, evaluates policy, builds candidate,
+ * dry-runs simulation, generates IIP, and stores proposal on server.
+ * Returns ONLY proposalId and sanitized summary. DOES NOT LEAK RAW IIP.
  */
 export async function prepareTransactionIntent(command: string): Promise<PrepareResult> {
+  // Authentication Barrier (VULN-R5-01)
+  const session = await verifySession();
+  if (!session) {
+    throw new Error("UNAUTHORIZED_ACCESS: Authentication required to prepare transaction intent.");
+  }
+
   let currentStep = "INTENT_PARSING";
   
   try {
@@ -67,11 +87,21 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
         }
       );
 
+      const proposalId = storeProposal(blockedIIP);
+
       return {
         success: false,
         error: `Policy Blocked: ${policyDecision.reason}`,
         step: "POLICY_EVALUATION",
-        iip: blockedIIP
+        proposalId,
+        summary: {
+          action: intent.action,
+          asset: intent.asset,
+          amount: intent.amount,
+          recipientAlias: intent.recipientAlias,
+          recipientAddress: policyDecision.resolvedAddress || "Blocked",
+          proofDigest: blockedIIP.proofDigest
+        }
       };
     }
 
@@ -95,18 +125,39 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
     currentStep = "IIP_GENERATION";
     const iip = generateIIP(intent, candidate, policyDecision, simulation);
 
+    // Store server-owned proposal (VULN-R5-02)
+    const proposalId = storeProposal(iip);
+
     if (iip.finalDecision !== "ALLOW_FOR_AUTHORIZATION") {
       return {
         success: false,
         error: simulation.revertReason || "Blocked by Intent Integrity Proof",
         step: simulation.success ? "IIP_GENERATION" : "SIMULATION",
-        iip
+        proposalId,
+        summary: {
+          action: intent.action,
+          asset: intent.asset,
+          amount: intent.amount,
+          recipientAlias: intent.recipientAlias,
+          recipientAddress: candidate.to,
+          gasEstimated: simulation.gasEstimated?.toString(),
+          proofDigest: iip.proofDigest
+        }
       };
     }
 
     return {
       success: true,
-      iip
+      proposalId,
+      summary: {
+        action: intent.action,
+        asset: intent.asset,
+        amount: intent.amount,
+        recipientAlias: intent.recipientAlias,
+        recipientAddress: candidate.to,
+        gasEstimated: simulation.gasEstimated?.toString(),
+        proofDigest: iip.proofDigest
+      }
     };
 
   } catch (error) {
@@ -120,49 +171,54 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
 
 /**
  * Phase 2: Execution Authorization
+ * Requires authenticated session and valid server-stored proposalId.
  * Enforces cryptographic digest verification and idempotency locks before on-chain broadcast.
  */
-export async function authorizeAndExecute(iip: IntentIntegrityProof): Promise<AuthorizeResult> {
-  try {
-    // Security Gate 1 (Tampering): Verify Keccak-256 digest
-    if (!verifyIIPDigest(iip)) {
-      throw new Error("TAMPERED_PAYLOAD: The transaction payload has been illegally modified.");
-    }
-
-    // Security Gate 2 (Idempotency): Prevent duplicate replay attacks
-    if (executedDigests.has(iip.proofDigest)) {
-      throw new Error("DUPLICATE_EXECUTION: This transaction digest has already been executed.");
-    }
-
-    // Security Gate 3 (Authorization Gate): Ensure proof authorized execution
-    if (iip.finalDecision !== "ALLOW_FOR_AUTHORIZATION") {
-      throw new Error("UNAUTHORIZED_EXECUTION: Intent Integrity Proof does not permit execution.");
-    }
-
-    const privateKey = process.env.AGENT_PRIVATE_KEY;
-    const rpcUrl = process.env.RPC_URL;
-
-    if (!privateKey || !rpcUrl) {
-      throw new Error("MISSING_CREDENTIALS: Real execution requires configured private key and RPC URL.");
-    }
-
-    // Lock digest immediately to prevent race conditions
-    executedDigests.add(iip.proofDigest);
-
-    const executionResult = await executeTransaction(iip, privateKey, rpcUrl);
-
-    return {
-      success: executionResult.success,
-      iip,
-      executionResult
-    };
-  } catch (error) {
-    return {
-      success: false,
-      iip,
-      error: (error as Error).message
-    };
+export async function authorizeAndExecute(proposalId: string): Promise<AuthorizeResult> {
+  // Authentication Barrier (VULN-R5-01)
+  const session = await verifySession();
+  if (!session) {
+    throw new Error("UNAUTHORIZED_ACCESS: Authentication required to execute transaction proposal.");
   }
+
+  // Server-Owned Proposal Retrieval (VULN-R5-02)
+  const iip = retrieveProposal(proposalId);
+  if (!iip) {
+    throw new Error("UNKNOWN_PROPOSAL: Transaction proposal not found or expired.");
+  }
+
+  // Security Gate 1 (Tampering): Verify Keccak-256 digest
+  if (!verifyIIPDigest(iip)) {
+    throw new Error("TAMPERED_PAYLOAD: The transaction payload has been illegally modified.");
+  }
+
+  // Security Gate 2 (Idempotency): Prevent duplicate replay attacks
+  if (executedDigests.has(iip.proofDigest)) {
+    throw new Error("DUPLICATE_EXECUTION: This transaction digest has already been executed.");
+  }
+
+  // Security Gate 3 (Authorization Gate): Ensure proof authorized execution
+  if (iip.finalDecision !== "ALLOW_FOR_AUTHORIZATION") {
+    throw new Error("UNAUTHORIZED_EXECUTION: Intent Integrity Proof does not permit execution.");
+  }
+
+  const privateKey = process.env.AGENT_PRIVATE_KEY;
+  const rpcUrl = process.env.RPC_URL;
+
+  if (!privateKey || !rpcUrl) {
+    throw new Error("MISSING_CREDENTIALS: Real execution requires configured private key and RPC URL.");
+  }
+
+  // Lock digest immediately to prevent race conditions
+  executedDigests.add(iip.proofDigest);
+
+  const executionResult = await executeTransaction(iip, privateKey, rpcUrl);
+
+  return {
+    success: executionResult.success,
+    proposalId,
+    executionResult
+  };
 }
 
 /**

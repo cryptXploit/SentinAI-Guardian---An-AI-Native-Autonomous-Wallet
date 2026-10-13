@@ -4,7 +4,6 @@ import { useState, useTransition } from "react";
 import { Send, Loader2 } from "lucide-react";
 import { prepareTransactionIntent, authorizeAndExecute, PrepareResult, AuthorizeResult } from "@/app/actions/orchestrator";
 import EvidencePanel from "./EvidencePanel";
-import { IntentIntegrityProof } from "@/core/security/iip";
 
 export default function AgentConsole() {
   const [inputCommand, setInputCommand] = useState("");
@@ -28,22 +27,22 @@ export default function AgentConsole() {
         const res = await prepareTransactionIntent(inputCommand);
         setPrepareResult(res);
       } catch (error) {
-        setPrepareResult({ success: false, error: String(error), step: "CLIENT_CATCH" });
+        setPrepareResult({ success: false, error: (error as Error).message, step: "AUTH" });
       } finally {
         setIsProcessing(false);
       }
     });
   };
 
-  const handleAuthorize = async (iip: IntentIntegrityProof) => {
+  const handleAuthorize = async (proposalId: string) => {
     if (isAuthorizing) return;
 
     setIsAuthorizing(true);
     try {
-      const res = await authorizeAndExecute(iip);
+      const res = await authorizeAndExecute(proposalId);
       setExecutionResult(res);
     } catch (error) {
-      setExecutionResult({ success: false, error: String(error) });
+      setExecutionResult({ success: false, proposalId, error: (error as Error).message });
     } finally {
       setIsAuthorizing(false);
     }
