@@ -8,7 +8,7 @@ import { generateIIP, verifyIIPDigest } from "@/core/security/iip";
 import { executeTransaction, ExecutionResult } from "@/core/execution/controller";
 import { UserPolicy } from "@/core/domain/schemas";
 import { verifySession } from "@/core/security/auth";
-import { storeProposal, retrieveProposal } from "@/core/security/proposal";
+import { storeProposal, retrieveProposal, lockProposalForExecution, updateProposalStatus } from "@/core/security/proposal";
 
 const MOCK_USER_POLICY: UserPolicy = {
   maxTransferAmountETH: "1.0",
@@ -19,8 +19,8 @@ const MOCK_USER_POLICY: UserPolicy = {
   }
 };
 
-// Module-level idempotency store (Fix VULN-06)
-const executedDigests = new Set<string>();
+
+
 
 export type ProposalSummary = {
   action: string;
@@ -210,9 +210,10 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
 }
 
 /**
- * Phase 2: Execution Authorization
+ * Phase 2: Execution Authorization (R5C — Durable Atomic Idempotency)
  * Requires authenticated session and valid server-stored proposalId.
- * Enforces cryptographic digest verification and idempotency locks before on-chain broadcast.
+ * Enforces cryptographic digest verification, atomic SQLite state lock,
+ * and terminal status recording before and after on-chain broadcast.
  */
 export async function authorizeAndExecute(proposalId: string): Promise<AuthorizeResult> {
   // Authentication Barrier (VULN-R5-01)
@@ -232,13 +233,18 @@ export async function authorizeAndExecute(proposalId: string): Promise<Authorize
     throw new Error("TAMPERED_PAYLOAD: The transaction payload has been illegally modified.");
   }
 
-  // Security Gate 2 (Idempotency): Prevent duplicate replay attacks
-  if (executedDigests.has(iip.proofDigest)) {
-    throw new Error("DUPLICATE_EXECUTION: This transaction digest has already been executed.");
+  // Security Gate 2 (Atomic Idempotency — R5C): Durable SQLite state lock
+  // SQL: UPDATE proposals SET status = 'SUBMITTING' WHERE id = ? AND status = 'PREPARED'
+  // Returns true only if exactly one row transitioned PREPARED -> SUBMITTING.
+  // Concurrent or duplicate calls see changes === 0 and are rejected.
+  const lockAcquired = lockProposalForExecution(proposalId);
+  if (!lockAcquired) {
+    throw new Error("DUPLICATE_EXECUTION: Transaction is already processing or executed.");
   }
 
   // Security Gate 3 (Authorization Gate): Ensure proof authorized execution
   if (iip.finalDecision !== "ALLOW_FOR_AUTHORIZATION") {
+    updateProposalStatus(proposalId, "FAILED");
     throw new Error("UNAUTHORIZED_EXECUTION: Intent Integrity Proof does not permit execution.");
   }
 
@@ -246,13 +252,19 @@ export async function authorizeAndExecute(proposalId: string): Promise<Authorize
   const rpcUrl = process.env.RPC_URL;
 
   if (!privateKey || !rpcUrl) {
+    updateProposalStatus(proposalId, "FAILED");
     throw new Error("MISSING_CREDENTIALS: Real execution requires configured private key and RPC URL.");
   }
 
-  // Lock digest immediately to prevent race conditions
-  executedDigests.add(iip.proofDigest);
-
   const executionResult = await executeTransaction(iip, privateKey, rpcUrl);
+
+  // Record terminal execution state in durable store
+  if (executionResult.success) {
+    updateProposalStatus(proposalId, "CONFIRMED");
+  } else {
+    const terminalStatus = executionResult.receiptStatus === "reverted" ? "REVERTED" : "FAILED";
+    updateProposalStatus(proposalId, terminalStatus);
+  }
 
   return {
     success: executionResult.success,
@@ -261,9 +273,5 @@ export async function authorizeAndExecute(proposalId: string): Promise<Authorize
   };
 }
 
-/**
- * Test helper for resetting the module-level idempotency cache in unit tests
- */
-export async function _resetExecutedDigestsForTesting() {
-  executedDigests.clear();
-}
+
+
