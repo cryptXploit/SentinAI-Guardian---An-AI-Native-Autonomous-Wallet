@@ -53,6 +53,16 @@ export default function LoginPage({ onAuthenticated }: { onAuthenticated: () => 
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
+          <input
+            type="text"
+            name="username"
+            value="operator"
+            autoComplete="username"
+            className="hidden"
+            readOnly
+            tabIndex={-1}
+            aria-hidden="true"
+          />
           <div>
             <label htmlFor="password" className="block text-sm font-medium text-gray-400 mb-1.5">
               Operator Password
