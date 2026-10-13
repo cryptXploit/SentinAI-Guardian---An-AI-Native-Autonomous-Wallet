@@ -1,0 +1,23 @@
+{
+  "scenarioId": "wrong-network",
+  "title": "Wrong Network / Chain Confusion",
+  "description": "Transaction targets Ethereum Mainnet (chainId: 1) instead of Sepolia Testnet.",
+  "isControlledScenario": true,
+  "intent": {
+    "action": "TRANSFER",
+    "asset": "ETH",
+    "amount": "0.05",
+    "recipientAlias": "alice"
+  },
+  "resolvedRecipientOrSpender": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+  "candidate": {
+    "to": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+    "value": "50000000000000000",
+    "data": "0x",
+    "chainId": 1
+  },
+  "expectedVerdict": "BLOCKED",
+  "expectedMismatches": [
+    "WRONG_CHAIN"
+  ]
+}

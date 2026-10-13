@@ -2,121 +2,128 @@
 
 **Project:** SentinAI Guardian  
 **Competition:** 2026 Shenzhen International FinTech Competition  
-**Track:** International Track — Topic F: Autonomous Agent Wallet  
-**Milestone:** R6  
+**International Track:** Topic F — Autonomous Agent Wallet  
+**Milestone:** R7 — Advanced Intent-Aware Scam Analyzer & Transaction Security Intelligence  
 
-SentinAI Guardian is an AI-Native Autonomous Wallet built to bridge Large Language Models (LLMs) with EVM-compatible blockchains securely. It guarantees that untrusted, stochastic AI models can never execute unauthorized transactions, drain user balances, or execute malicious payloads.
+SentinAI Guardian is an Intent-Aware Autonomous Wallet built to bridge Large Language Models (LLMs) with EVM-compatible blockchains securely. It enforces strict separation between untrusted AI interpretation, deterministic transaction construction, semantic calldata inspection, and human authorization.
 
 ---
 
 ## 1. High-Level System Architecture
 
-SentinAI Guardian employs a **Zero-Trust, Human-in-the-Loop, Two-Phase Execution Architecture** built on Next.js 16 (App Router) using server-side modular pipelines, SQLite durable state machines, and Viem for EVM communications.
+SentinAI Guardian employs a **Zero-Trust, Human-in-the-Loop, Semantic-Verified Execution Architecture** built on Next.js 16 (App Router), TypeScript, SQLite with WAL journaling, and Viem for EVM communications.
 
 ```
-[ Operator / Agent ] ──> Natural Language Command
+[ Operator / Agent ] ──> Natural Language Command OR Test Fixture
                                │
                                ▼
-     ┌──────────────────────────────────────────────────┐
-     │       Phase 1: Preparation & Intent Parsing      │
-     ├──────────────────────────────────────────────────┤
-     │  - Input Sanitization (500 char max, injection)  │
-     │  - IntentAIProvider (Gemini 1.5 Flash / Mock)    │
-     │  - Read-Only vs State-Changing Routing Check     │
-     └─────────────┬──────────────────────┬─────────────┘
-                   │                      │
-         [Read-Only Action]     [State-Changing Action]
-                   │                      │
-                   ▼                      ▼
+     ┌────────────────────────────────────────────────────────┐
+     │         Phase 1: Preparation & Intent Parsing          │
+     ├────────────────────────────────────────────────────────┤
+     │  - Input Sanitization (500 char max, injection filter) │
+     │  - IntentAIProvider (@google/genai / Mock)             │
+     │  - Read-Only vs State-Changing Routing Check           │
+     └─────────────┬────────────────────────────┬─────────────┘
+                   │                            │
+         [Read-Only Action]           [State-Changing Action]
+                   │                            │
+                   ▼                            ▼
     ┌──────────────────────┐   ┌───────────────────────────────────────────────┐
     │ Direct Live Read     │   │ 1. Transaction Candidate Builder              │
     │  - Sepolia RPC check │   │    - ABI Calldata compilation (ETH/ERC-20)    │
     │  - Native + ERC-20   │   │    - Strict BigInt parseUnits                 │
-    │    wallet overview   │   │ 2. Policy Risk Engine                         │
-    │  - No proposal made  │   │    - Mathematical whitelist & spend limits    │
-    │  - Zero key access   │   │    - Decodes calldata (detects spoofing)      │
-    │  - 10s TTL cache     │   │ 3. EVM Simulation Engine                      │
-    └──────────────┬───────┘   │    - RPC dry-run (estimateGas)                │
-                   │           │ 4. Intent Integrity Proof (IIP)               │
+    │    wallet overview   │   │ 2. EVM Simulation Engine                      │
+    │  - No proposal made  │   │    - RPC dry-run (estimateGas)                │
+    │  - Zero key access   │   │ 3. Deterministic Policy Engine                │
+    │  - Isolated cache    │   │    - Mathematical whitelist & spend limits    │
+    └──────────────┬───────┘   │ 4. Intent-Aware Transaction Analyzer (R7)     │
+                   │           │    - Independent ABI calldata decoding        │
+                   │           │    - 10 Intent-Mismatch rules verification    │
+                   │           │ 5. Approval Exposure Intelligence (R7)        │
+                   │           │    - Bounded vs unlimited allowance check     │
+                   │           │ 6. Grounded Security Explainer (R7)           │
+                   │           │    - AI educational insights (no veto power)  │
+                   │           │ 7. Intent Integrity Proof (IIP)               │
                    │           │    - Keccak-256 canonical digest over calldata│
-                   │           │ 5. SQLite Proposal Manager                    │
-                   │           │    - Stores candidate in PREPARED state       │
-                   │           │    - Atomic ownership & 5m expiration lock    │
+                   │           │ 8. SQLite Proposal Store                      │
+                   │           │    - Atomic ownership & expiration lock       │
                    │           └──────────────────────┬────────────────────────┘
                    │                                  │
                    │                                  ▼
                    │                   ┌───────────────────────────────┐
                    │                   │ Human-in-the-Loop Gate        │
-                   │                   │ Operator reviews UI digest    │
-                   │                   │ Explicit "Confirm & Execute"  │
+                   │                   │ IntentComparisonPanel UI      │
+                   │                   │ - Side-by-side mismatch check │
+                   │                   │ - Explicit "Confirm & Execute"│
                    │                   └──────────────┬────────────────┘
                    │                                  │
                    │                                  ▼
                    │           ┌───────────────────────────────────────────────┐
-                   │           │    Phase 2: Authorization & Execution         │
+                   │           │      Phase 2: Authorization & Execution       │
                    │           ├───────────────────────────────────────────────┤
                    │           │ 1. Session & Ownership Validation             │
-                   │           │ 2. Atomic Transition: PREPARED -> SUBMITTING  │
-                   │           │ 3. Execution Controller: Signs & Broadcasts   │
-                   │           │ 4. Persist tx_hash: SUBMITTING -> SUBMITTED   │
-                   │           │ 5. Wait for Receipt: SUBMITTED -> CONFIRMED   │
+                   │           │ 2. Expiration Boundary Check (ms precision)   │
+                   │           │ 3. Transition: PREPARED -> AUTHORIZED         │
+                   │           │ 4. Verify IIP Keccak-256 Digest               │
+                   │           │ 5. Transition Lock: AUTHORIZED -> SUBMITTING  │
+                   │           │ 6. Execution Controller: Signs & Broadcasts   │
+                   │           │ 7. Persist tx_hash: SUBMITTING -> SUBMITTED   │
+                   │           │ 8. Wait for Receipt: SUBMITTED -> CONFIRMED   │
                    │           └──────────────────────┬────────────────────────┘
                    │                                  │
                    ▼                                  ▼
              [Evidence Panel]                  [Live Blockchain]
-         Intelligence / Audit Card         Sepolia Testnet Confirmation
+         Intent Comparison Card            Sepolia Testnet Confirmation
 ```
 
 ---
 
 ## 2. Core Architectural Pillars
 
-### A. Intent AI Provider Abstraction (`src/core/ai/provider.ts`)
-The system isolates AI logic behind a strictly typed `IntentAIProvider` interface:
-- **`GeminiIntentProvider`:**
-  - Model: `gemini-1.5-flash` with structured JSON schema (`responseMimeType: 'application/json'`).
-  - Timeout: 15-second abort controller ceiling.
-  - Sanitization: Truncation at 500 characters, injection prompt stripping, latency tracking.
-  - Fail-Closed: If live Gemini fails, the request throws an error and never silently falls back to mock execution.
-- **`MockIntentProvider`:**
-  - Deterministic regex and keyword pattern matching for CI/CD, local testing, and mock mode (`AI_PROVIDER=mock`).
-- **`getIntentProvider()`:**
-  - Factory resolving provider based on `process.env.AI_PROVIDER` and `process.env.GEMINI_API_KEY`.
+### A. Intent-to-Transaction Semantic Verification (`src/core/security/transaction-analyzer.ts`)
+The core innovation of Milestone R7. Even though the application constructed the transaction candidate, it does **not** trust the construction process. It independently parses the bytecode using Viem's `decodeFunctionData`:
+- **Supported Operations:**
+  - `NATIVE_TRANSFER`: Direct ETH transfer (`data === '0x'`).
+  - `ERC20_TRANSFER`: `transfer(address to, uint256 amount)`.
+  - `ERC20_APPROVE`: `approve(address spender, uint256 amount)`.
+  - `UNSUPPORTED_CALL`: Any arbitrary or unlisted method fails closed.
+- **10 Intent-Mismatch Rules:**
+  1. `RECIPIENT_MISMATCH`: Decoded destination does not match authorized contact.
+  2. `TOKEN_CONTRACT_MISMATCH`: Target contract does not match requested token contract in registry.
+  3. `TRANSFER_AMOUNT_MISMATCH`: Decoded transfer amount does not equal requested amount.
+  4. `APPROVAL_AMOUNT_MISMATCH`: Decoded allowance differs from requested allowance.
+  5. `UNLIMITED_APPROVAL_REQUEST`: Detects $2^{255}$ or MaxUint256 requests and checks user policy.
+  6. `SPENDER_MISMATCH`: Decoded approved contract does not match authorized spender.
+  7. `TRANSACTION_METHOD_MISMATCH`: Transfer requested but approve calldata compiled, or vice versa.
+  8. `UNEXPECTED_NATIVE_VALUE`: Native ETH attached to an ERC-20 contract interaction.
+  9. `WRONG_CHAIN`: Transaction targets chainId other than Sepolia (`11155111`).
+  10. `UNSUPPORTED_CALLDATA`: Unrecognized method selectors fail closed.
 
-### B. Read-Only Query Routing (`src/app/actions/orchestrator.ts`)
-Queries such as balance requests (`QUERY_BALANCE`) and network checks (`QUERY_NETWORK`) are read-only:
-- They bypass transaction proposal generation, policy evaluation, and simulation.
-- They **never** interact with the private key or execution controller.
-- They invoke `getLiveWalletOverview()` or `verifySepoliaConnection()` directly and return instant on-chain intelligence.
+### B. Approval Exposure Intelligence (`src/core/security/approval-analyzer.ts`)
+- Explicitly models token allowances as **spending permissions**, distinct from immediate fund transfers.
+- Computes allowance deltas: current allowance vs proposed allowance vs configured policy spending cap.
+- Evaluates risk: distinguishes between standard bounded allowances and permanent unlimited spending rights.
 
-### C. Canonical EVM Calldata & Tamper-Evident IIP (`src/core/security/iip.ts`)
-The Intent Integrity Proof cryptographically links:
-1. High-level intent parameters (action, asset, recipient, amount).
-2. Compiled canonical EVM payload (`to`, `value`, `candidate.data`).
-3. Policy engine decision (`ALLOW` / `DENY`).
-4. Simulation dry-run result.
-5. Salt and creation timestamp.
-A Keccak-256 digest is generated over these canonical elements. If an attacker modifies the calldata or recipient between preparation and execution, the digest mismatch immediately causes execution rejection.
+### C. Grounded AI Security Explanations (`src/core/ai/security-explainer.ts`)
+- Uses `@google/genai` to generate user-friendly educational summaries of technical findings.
+- **Strict Invariant:** The AI is strictly an educator. It cannot override policy, unblock transactions, or alter the `canExecute` boolean. If the AI is unavailable, a deterministic rule-based generator produces structured explanations.
 
-### D. Durable SQLite State Machine (`src/core/security/proposal.ts`)
-Proposals are backed by SQLite (`better-sqlite3`) with WAL journaling:
-- **Versioned Non-Destructive Migrations:** Incremental schema alterations with automatic backup (`*.bak.*`).
-- **State Transition Matrix:** Enforces valid transitions (`PREPARED` → `AUTHORIZED` → `SUBMITTING` → `SUBMITTED` → `CONFIRMED` or `FAILED_BEFORE_BROADCAST`). Prevents resurrection, re-preparation, or replay.
-- **Expiration Precision:** Millisecond-accurate expiration verification (`isProposalExpired`).
-- **Safe WAL Checkpointing:** `backupDatabase()` executes `PRAGMA wal_checkpoint(TRUNCATE)` to guarantee consistent database snapshots.
+### D. AI Provider Abstraction (`src/core/ai/provider.ts`)
+- Migrated to the modern `@google/genai` SDK (version 2.x).
+- Uses `gemini-2.5-flash` with true `AbortController` cancellation, 15-second timeout, 500-char length guard, and structured JSON output.
+- Deterministic `MockIntentProvider` for offline and testing environments.
+- Zero silent fallback: failures throw explicit errors.
 
-### E. Live Web3 Services (`src/core/web3/`)
-- **`rpc-service.ts`:**
-  - Strictly targets Ethereum Sepolia Testnet (`chainId: 11155111`).
-  - `verifySepoliaConnection()` asserts the connected chain ID is exactly `11155111`. If wrong, fails closed with `WRONG_CHAIN`.
-- **`wallet-service.ts`:**
-  - Derives agent public address securely without exposing private keys.
-  - Queries native Sepolia ETH and verified ERC-20 token contracts (`USDC`, `USDT`, `DAI`).
-  - Converts token balances with pure BigInt precision and formatted decimal strings.
-  - Employs a 10-second TTL cache to prevent RPC rate-limit exhaustion.
+### E. Wallet Intelligence with Isolated Caching (`src/core/web3/wallet-service.ts`)
+- Explicit balance states: `AVAILABLE`, `UNAVAILABLE`, `NOT_CONFIGURED`, `UNSUPPORTED`.
+- Never displays fabricated zero balances on RPC failure.
+- Bounded cache isolated by `${address.toLowerCase()}:${rpcUrl}:${chainId}` to prevent cross-account cache contamination.
+- Supports read-only public address configuration without requiring custody of a private key.
 
-### F. Operator Authentication & Defense in Depth (`src/core/security/auth.ts`)
-- Single-operator authentication gate with 256-bit cryptographically secure session tokens.
-- Secure, HTTP-only cookies (`sentinai_session`) with `SameSite=Lax`.
-- Sliding-window IP rate limiting (max 5 failed attempts per minute).
-- Dynamic Server Component integration via `await connection()` in Next.js 16.
+---
+
+## 3. Supported Methods & Threat Boundary
+
+- **Target Blockchain:** Ethereum Sepolia Testnet Only (`chainId: 11155111`).
+- **Supported Methods:** Native ETH transfers, ERC-20 `transfer`, ERC-20 `approve`.
+- **EVM Simulation Limitations:** Simulation via `estimateGas` dry-runs the transaction against current block state. It catches reverts and gas issues at execution time, but does not guarantee protection against future state changes or front-running.

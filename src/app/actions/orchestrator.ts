@@ -11,6 +11,19 @@ import { verifySession } from "@/core/security/auth";
 import { getLiveWalletOverview, WalletOverview } from "@/core/web3/wallet-service";
 import { verifySepoliaConnection, RpcConnectionStatus } from "@/core/web3/rpc-service";
 import {
+  analyzeTransaction,
+  TransactionAnalysisResult,
+} from "@/core/security/transaction-analyzer";
+import {
+  analyzeApprovalExposure,
+  ApprovalExposureAnalysis,
+} from "@/core/security/approval-analyzer";
+import {
+  explainSecurityFindings,
+  SecurityExplanationResult,
+} from "@/core/ai/security-explainer";
+import { getFixtureById } from "../../../fixtures/security";
+import {
   storeProposal,
   retrieveProposal,
   authorizeProposal,
@@ -26,7 +39,8 @@ const MOCK_USER_POLICY: UserPolicy = {
   allowUnlimitedApproval: false,
   trustedContacts: {
     "alice": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-    "bob": "0x1111111254fb6c44bac0bed2854e76f90643097d"
+    "bob": "0x1111111254fb6c44bac0bed2854e76f90643097d",
+    "uniswap": "0x1111111254fb6c44bac0bed2854e76f90643097d"
   }
 };
 
@@ -53,6 +67,9 @@ export type PrepareResult = {
   queryResult?: QueryResult;
   proposalId?: string;
   summary?: ProposalSummary;
+  analysis?: TransactionAnalysisResult;
+  exposure?: ApprovalExposureAnalysis;
+  explanation?: SecurityExplanationResult;
   error?: string;
   step?: string;
 };
@@ -163,59 +180,94 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
     currentStep = "POLICY_EVALUATION";
     const policyDecision = evaluatePolicy(intent, candidate, MOCK_USER_POLICY);
 
-    if (policyDecision.status !== "ALLOW") {
-      const blockedIIP = generateIIP(
-        intent, candidate, policyDecision,
-        { success: false, revertReason: `Policy blocked: ${policyDecision.reason}`, timestamp: new Date().toISOString() }
-      );
-      const proposalId = storeProposal(blockedIIP, session.userId);
+    // Step 6: Deterministic Semantic Analysis & Intent Mismatch Verification (R7)
+    currentStep = "TRANSACTION_ANALYSIS";
+    const analysis = analyzeTransaction({
+      intent,
+      resolvedRecipientOrSpender: resolvedAddress,
+      candidate,
+      policy: MOCK_USER_POLICY,
+      simulationSuccess: simulation.success,
+      simulationError: simulation.revertReason,
+    });
 
-      return {
-        success: false,
-        error: `Policy Blocked: ${policyDecision.reason}`,
-        step: "POLICY_EVALUATION",
-        proposalId,
-        summary: {
-          action: intent.action, asset: intent.asset, amount: intent.amount,
-          recipientAlias: intent.recipientAlias,
-          recipientAddress: policyDecision.resolvedAddress || candidate.to,
-          gasEstimated: simulation.gasEstimated?.toString(),
-          proofDigest: blockedIIP.proofDigest
-        }
-      };
+    // Step 7: Approval Exposure Intelligence (if APPROVE) (R7)
+    let exposure: ApprovalExposureAnalysis | undefined;
+    if (analysis.operationType === 'ERC20_APPROVE') {
+      exposure = analyzeApprovalExposure({
+        tokenAddress: candidate.to,
+        spenderAddress: analysis.decodedAction.recipientOrSpender,
+        proposedAllowanceRaw: BigInt(analysis.decodedAction.rawAmount || '0'),
+        policy: MOCK_USER_POLICY,
+        knownContacts: MOCK_USER_POLICY.trustedContacts,
+      });
     }
 
-    // Step 6: Generate IIP (M6 + Calldata Hashing)
-    currentStep = "IIP_GENERATION";
-    const iip = generateIIP(intent, candidate, policyDecision, simulation);
+    // Step 8: Security Explanation (Grounded AI or Deterministic Rules) (R7)
+    const explanation = await explainSecurityFindings({
+      analysis,
+      apiKey: process.env.GEMINI_API_KEY,
+    });
 
-    // Step 7: Store Owner-Bound Proposal (R5D)
+    // Final Gate: Combined deterministic decision (Policy + Semantic Analysis)
+    const isSecurityBlocked = !analysis.canExecute || policyDecision.status !== "ALLOW";
+    const effectivePolicyDecision: PolicyDecision = isSecurityBlocked
+      ? {
+          status: "BLOCKED",
+          reason:
+            analysis.findings.find((f) => f.affectsExecution)?.explanation ||
+            policyDecision.reason ||
+            "Blocked by Transaction Security Analyzer",
+          resolvedAddress: candidate.to,
+        }
+      : policyDecision;
+
+    // Step 9: Generate IIP (M6 + Calldata Hashing)
+    currentStep = "IIP_GENERATION";
+    const iip = generateIIP(intent, candidate, effectivePolicyDecision, simulation);
+
+    // Step 10: Store Owner-Bound Proposal (R5D)
     const proposalId = storeProposal(iip, session.userId);
 
-    if (iip.finalDecision !== "ALLOW_FOR_AUTHORIZATION") {
+    if (isSecurityBlocked || iip.finalDecision !== "ALLOW_FOR_AUTHORIZATION") {
       return {
         success: false,
-        error: simulation.revertReason || "Blocked by Intent Integrity Proof",
-        step: simulation.success ? "IIP_GENERATION" : "SIMULATION",
+        error:
+          effectivePolicyDecision.reason ||
+          simulation.revertReason ||
+          "Blocked by Intent Integrity Proof",
+        step: "TRANSACTION_ANALYSIS",
         proposalId,
+        analysis,
+        exposure,
+        explanation,
         summary: {
-          action: intent.action, asset: intent.asset, amount: intent.amount,
-          recipientAlias: intent.recipientAlias, recipientAddress: candidate.to,
+          action: intent.action,
+          asset: intent.asset,
+          amount: intent.amount,
+          recipientAlias: intent.recipientAlias,
+          recipientAddress: candidate.to,
           gasEstimated: simulation.gasEstimated?.toString(),
-          proofDigest: iip.proofDigest
-        }
+          proofDigest: iip.proofDigest,
+        },
       };
     }
 
     return {
       success: true,
       proposalId,
+      analysis,
+      exposure,
+      explanation,
       summary: {
-        action: intent.action, asset: intent.asset, amount: intent.amount,
-        recipientAlias: intent.recipientAlias, recipientAddress: candidate.to,
+        action: intent.action,
+        asset: intent.asset,
+        amount: intent.amount,
+        recipientAlias: intent.recipientAlias,
+        recipientAddress: candidate.to,
         gasEstimated: simulation.gasEstimated?.toString(),
-        proofDigest: iip.proofDigest
-      }
+        proofDigest: iip.proofDigest,
+      },
     };
 
   } catch (error) {
@@ -225,6 +277,98 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
       step: currentStep
     };
   }
+}
+
+/**
+ * Executes a controlled security demonstration fixture (Milestone R7 Section 17).
+ * Tests the full transaction analysis pipeline on pre-defined security scenarios.
+ */
+export async function testSecurityFixtureAction(scenarioId: string): Promise<PrepareResult> {
+  const session = await verifySession();
+  if (!session) {
+    throw new Error("UNAUTHORIZED_ACCESS: Authentication required to test security fixtures.");
+  }
+
+  const fixture = getFixtureById(scenarioId);
+  if (!fixture) {
+    throw new Error(`UNKNOWN_FIXTURE: Scenario ${scenarioId} not found.`);
+  }
+
+  const candidate: TransactionCandidate = {
+    to: fixture.candidate.to,
+    value: BigInt(fixture.candidate.value || '0'),
+    data: (fixture.candidate.data || '0x') as `0x${string}`,
+    chainId: fixture.candidate.chainId,
+  };
+
+  const simulationSuccess = fixture.simulationSuccess !== false;
+  const simulationError = fixture.simulationError;
+
+  const analysis = analyzeTransaction({
+    intent: fixture.intent,
+    resolvedRecipientOrSpender: fixture.resolvedRecipientOrSpender,
+    candidate,
+    policy: MOCK_USER_POLICY,
+    simulationSuccess,
+    simulationError,
+  });
+
+  let exposure: ApprovalExposureAnalysis | undefined;
+  if (analysis.operationType === 'ERC20_APPROVE') {
+    exposure = analyzeApprovalExposure({
+      tokenAddress: candidate.to,
+      spenderAddress: analysis.decodedAction.recipientOrSpender,
+      proposedAllowanceRaw: BigInt(analysis.decodedAction.rawAmount || '0'),
+      policy: MOCK_USER_POLICY,
+      knownContacts: MOCK_USER_POLICY.trustedContacts,
+    });
+  }
+
+  const explanation = await explainSecurityFindings({
+    analysis,
+    apiKey: process.env.GEMINI_API_KEY,
+  });
+
+  const policyDecision = evaluatePolicy(fixture.intent, candidate, MOCK_USER_POLICY);
+  const isBlocked = !analysis.canExecute || policyDecision.status !== "ALLOW";
+
+  const effectivePolicyDecision: PolicyDecision = isBlocked
+    ? {
+        status: "BLOCKED",
+        reason:
+          analysis.findings.find((f) => f.affectsExecution)?.explanation ||
+          policyDecision.reason ||
+          "Blocked by Transaction Security Analyzer",
+        resolvedAddress: candidate.to,
+      }
+    : policyDecision;
+
+  const iip = generateIIP(
+    fixture.intent,
+    candidate,
+    effectivePolicyDecision,
+    { success: simulationSuccess, revertReason: simulationError, timestamp: new Date().toISOString() }
+  );
+
+  const proposalId = storeProposal(iip, session.userId);
+
+  return {
+    success: !isBlocked,
+    proposalId,
+    analysis,
+    exposure,
+    explanation,
+    error: isBlocked ? `Controlled Scenario Blocked: ${effectivePolicyDecision.reason}` : undefined,
+    step: "TRANSACTION_ANALYSIS",
+    summary: {
+      action: fixture.intent.action,
+      asset: fixture.intent.asset,
+      amount: fixture.intent.amount,
+      recipientAlias: fixture.intent.recipientAlias,
+      recipientAddress: candidate.to,
+      proofDigest: iip.proofDigest,
+    },
+  };
 }
 
 /**
@@ -290,7 +434,7 @@ export async function authorizeAndExecute(proposalId: string): Promise<Authorize
   }
 
   // Gate 8: Execution Authorization Check
-  if (iip.finalDecision !== "ALLOW_FOR_AUTHORIZATION") {
+  if (iip.finalDecision !== "ALLOW_FOR_AUTHORIZATION" || iip.policyDecision.status !== "ALLOW") {
     updateProposalStatus(proposalId, "FAILED");
     throw new Error("UNAUTHORIZED_EXECUTION: Intent Integrity Proof does not permit execution.");
   }

@@ -1,10 +1,11 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI, Type } from '@google/genai';
 import { ParsedIntentSchema, ParsedIntent } from '../domain/schemas';
 
 export const MAX_COMMAND_LENGTH = 500;
 
 export interface IntentAIProvider {
   readonly name: string;
+  readonly modelName?: string;
   readonly lastLatencyMs?: number;
   parseIntent(command: string): Promise<ParsedIntent>;
 }
@@ -38,15 +39,17 @@ SECURITY & ADVERSARIAL DEFENSE:
 
 export class GeminiIntentProvider implements IntentAIProvider {
   readonly name = 'gemini';
+  readonly modelName: string;
   private _lastLatencyMs?: number;
 
   constructor(
     private readonly apiKey: string = process.env.GEMINI_API_KEY || '',
-    private readonly modelName: string = process.env.GEMINI_MODEL || 'gemini-1.5-flash'
+    modelName: string = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
   ) {
     if (!this.apiKey) {
       throw new Error('CONFIG_ERROR: GEMINI_API_KEY is not configured in environment.');
     }
+    this.modelName = modelName;
   }
 
   get lastLatencyMs(): number | undefined {
@@ -62,39 +65,68 @@ export class GeminiIntentProvider implements IntentAIProvider {
       throw new Error(`INPUT_TOO_LONG: Command exceeds maximum length of ${MAX_COMMAND_LENGTH} characters.`);
     }
 
-    const genAI = new GoogleGenerativeAI(this.apiKey);
-    const model = genAI.getGenerativeModel({
-      model: this.modelName,
-      systemInstruction: AI_SYSTEM_PROMPT,
-      generationConfig: {
-        temperature: 0,
-        responseMimeType: 'application/json',
-      },
-    });
+    // Input sanitization: Strip common injection delimiters
+    const sanitizedCommand = command
+      .replace(/<\/?script[^>]*>/gi, '')
+      .replace(/<\/?iframe[^>]*>/gi, '')
+      .replace(/system\s*:\s*/gi, '')
+      .replace(/assistant\s*:\s*/gi, '')
+      .trim();
 
+    const ai = new GoogleGenAI({ apiKey: this.apiKey });
     const startTime = Date.now();
-
-    // 15-second request timeout ceiling
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('AI_TIMEOUT: Gemini API request timed out after 15 seconds.')), 15_000)
-    );
+    const abortController = new AbortController();
+    const timer = setTimeout(() => abortController.abort(), 15_000);
 
     try {
-      const generatePromise = model.generateContent(command);
-      const result = await Promise.race([generatePromise, timeoutPromise]);
-      this._lastLatencyMs = Date.now() - startTime;
+      const response = await ai.models.generateContent({
+        model: this.modelName,
+        contents: sanitizedCommand,
+        config: {
+          systemInstruction: AI_SYSTEM_PROMPT,
+          temperature: 0,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              action: {
+                type: Type.STRING,
+                description: 'The financial or read-only action type',
+              },
+              asset: {
+                type: Type.STRING,
+                description: 'Asset symbol e.g. ETH, USDC, USDT, DAI, or empty string',
+              },
+              amount: {
+                type: Type.STRING,
+                description: 'The numeric amount as string or UNLIMITED or 0',
+              },
+              recipientAlias: {
+                type: Type.STRING,
+                description: 'Recipient alias, address, or empty string',
+              },
+            },
+            required: ['action', 'asset', 'amount', 'recipientAlias'],
+          },
+          abortSignal: abortController.signal,
+        },
+      });
 
-      const responseText = result.response.text();
+      this._lastLatencyMs = Date.now() - startTime;
+      const responseText = response.text || '';
       const rawJson = JSON.parse(responseText);
 
       return ParsedIntentSchema.parse(rawJson);
-    } catch (error) {
+    } catch (error: unknown) {
       this._lastLatencyMs = Date.now() - startTime;
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes('AI_TIMEOUT')) {
-        throw error;
+      const isAbort = (error as { name?: string })?.name === 'AbortError' || abortController.signal.aborted;
+      if (isAbort) {
+        throw new Error('AI_TIMEOUT: Gemini API request timed out after 15 seconds.');
       }
+      const msg = error instanceof Error ? error.message : String(error);
       throw new Error(`SCHEMA_ERROR: AI failed to produce a valid structured intent: ${msg}`);
+    } finally {
+      clearTimeout(timer);
     }
   }
 }

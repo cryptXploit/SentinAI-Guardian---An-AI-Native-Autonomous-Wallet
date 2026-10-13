@@ -1,8 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, ChevronDown, ChevronUp, ShieldX, ShieldCheck, ArrowRight, Loader2, Clock, Wallet, Coins, Activity } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  ShieldX,
+  ShieldAlert,
+  ArrowRight,
+  Loader2,
+  Clock,
+  Wallet,
+  Coins,
+  Activity,
+  Lock,
+} from "lucide-react";
 import { PrepareResult, AuthorizeResult } from "@/app/actions/orchestrator";
+import IntentComparisonPanel from "./IntentComparisonPanel";
 
 interface EvidencePanelProps {
   prepareResult?: PrepareResult | null;
@@ -102,7 +116,7 @@ export default function EvidencePanel({
       : 'text-danger';
 
     return (
-      <div className={`border rounded-xl overflow-hidden ${cardBorder}`}>
+      <div className={`border rounded-xl overflow-hidden shadow-lg ${cardBorder}`}>
         <div className="p-6">
           <div className="flex items-start gap-4">
             <div className="mt-1">
@@ -187,139 +201,98 @@ export default function EvidencePanel({
     );
   }
 
-  // Phase 1 Outcome: Either Ready for Human Authorization or Blocked by Policy/Simulation
+  // Phase 1: Semantic Verification & Risk Evidence (Milestone R7)
   const summary = prepareResult?.summary;
-  const isReadyForAuth = prepareResult?.success && prepareResult?.proposalId && summary;
+  const analysis = prepareResult?.analysis;
+  const isBlocked = !prepareResult?.success || (analysis && !analysis.canExecute);
+  const isReadyForAuth = !isBlocked && prepareResult?.proposalId && summary;
+  const proposalId = prepareResult?.proposalId;
 
-  if (isReadyForAuth && prepareResult.proposalId && summary) {
-    const proposalId = prepareResult.proposalId;
-
-    return (
-      <div className="border border-accent-blue/30 bg-surface rounded-xl overflow-hidden shadow-lg">
-        <div className="p-6">
-          <div className="flex items-start gap-4">
-            <div className="mt-1">
-              <ShieldCheck className="w-8 h-8 text-accent-blue" />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <h3 className="text-lg font-semibold text-foreground">
-                  Transaction Verified — Authorization Required
-                </h3>
-                <span className="text-xs px-2.5 py-1 rounded-full bg-accent-blue/10 text-accent-blue font-mono border border-accent-blue/20">
-                  Server-Owned Proposal
-                </span>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 bg-background/60 p-4 rounded-lg border border-border">
-                <div>
-                  <span className="text-xs text-gray-400">Action & Asset</span>
-                  <p className="text-sm font-semibold text-foreground">{summary.action} {summary.amount} {summary.asset}</p>
-                </div>
-                <div>
-                  <span className="text-xs text-gray-400">Recipient Address</span>
-                  <p className="text-sm font-mono text-gray-300 truncate" title={summary.recipientAddress}>
-                    {summary.recipientAlias} ({summary.recipientAddress})
-                  </p>
-                </div>
-                <div>
-                  <span className="text-xs text-gray-400">Policy Evaluation</span>
-                  <p className="text-sm text-success flex items-center gap-1 font-medium">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Passed Rules
-                  </p>
-                </div>
-                <div>
-                  <span className="text-xs text-gray-400">EVM Simulation</span>
-                  <p className="text-sm text-success flex items-center gap-1 font-medium">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Dry-Run Passed ({summary.gasEstimated || "21000"} gas)
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 flex items-center justify-between flex-wrap gap-4 pt-2">
-                <div className="text-xs text-gray-400 font-mono">
-                  <span className="text-gray-500">Proposal ID: </span>
-                  <span className="text-accent-blue">{proposalId.slice(0, 10)}...{proposalId.slice(-8)}</span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => onAuthorize && onAuthorize(proposalId)}
-                  disabled={isAuthorizing}
-                  className="px-5 py-2.5 bg-success text-white font-medium rounded-lg hover:bg-emerald-600 disabled:opacity-50 transition-colors flex items-center gap-2 shadow-sm"
-                >
-                  {isAuthorizing ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Authorizing Transaction...
-                    </>
-                  ) : (
-                    <>
-                      Approve & Execute
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Expandable Proposal Data */}
-        <div className="border-t border-border/50">
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="w-full px-6 py-3 flex items-center justify-between text-sm text-gray-400 hover:text-gray-200 transition-colors bg-surface-hover/50"
-          >
-            <span>View Sanitized Proposal Summary</span>
-            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          </button>
-
-          {isExpanded && (
-            <div className="p-6 bg-background border-t border-border/50 overflow-x-auto">
-              <pre className="text-xs text-gray-400 font-mono">
-                {JSON.stringify({ proposalId, summary }, null, 2)}
-              </pre>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Phase 1 Blocked / Failed
   return (
-    <div className="border border-danger/20 bg-danger/5 rounded-xl overflow-hidden">
-      <div className="p-6">
-        <div className="flex items-start gap-4">
-          <div className="mt-1">
-            <ShieldX className="w-8 h-8 text-danger" />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-lg font-semibold text-danger">
-              Transaction Blocked by Security Policy
-            </h3>
-            <div className="mt-2 space-y-1">
-              <p className="text-sm text-gray-300">
-                <span className="font-medium text-gray-400">Error:</span> {prepareResult?.error || "Policy check blocked transaction"}
+    <div className="space-y-6">
+      {/* 1. Milestone R7 Intent Comparison Panel */}
+      {analysis && (
+        <IntentComparisonPanel
+          analysis={analysis}
+          exposure={prepareResult?.exposure}
+          explanation={prepareResult?.explanation}
+          summary={summary}
+          isBlocked={isBlocked}
+          error={prepareResult?.error}
+        />
+      )}
+
+      {/* 2. Phase 1 Authorization Gate or Blocked Notice */}
+      {isReadyForAuth && proposalId && summary && (
+        <div className="border border-emerald-500/30 bg-surface rounded-xl overflow-hidden shadow-lg p-6">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-emerald-400" />
+                <h4 className="font-semibold text-foreground text-sm">
+                  Human-in-the-Loop Execution Gate
+                </h4>
+              </div>
+              <p className="text-xs text-gray-400">
+                All deterministic policy checks, calldata verifications, and Sepolia simulations passed. Explicit authorization required before blockchain broadcast.
               </p>
-              {prepareResult?.step && (
-                <p className="text-sm text-gray-300">
-                  <span className="font-medium text-gray-400">Failed at Step:</span> {prepareResult.step}
-                </p>
-              )}
+              <div className="text-[11px] font-mono text-gray-500 pt-1">
+                Proposal ID: <span className="text-accent-blue">{proposalId}</span>
+              </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => onAuthorize && onAuthorize(proposalId)}
+              disabled={isAuthorizing}
+              className="px-6 py-2.5 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-500 disabled:opacity-50 transition-colors flex items-center gap-2 shadow-sm text-sm"
+            >
+              {isAuthorizing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Authorizing &amp; Signing...
+                </>
+              ) : (
+                <>
+                  Confirm &amp; Execute Transaction
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
           </div>
         </div>
-      </div>
+      )}
 
-      {summary && (
-        <div className="border-t border-border/50">
+      {/* Blocked Security Barrier */}
+      {isBlocked && (
+        <div className="border border-red-500/30 bg-red-950/10 rounded-xl p-5 flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-red-500/20 text-red-400">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+            <div>
+              <h5 className="font-semibold text-sm text-red-300">
+                Execution Permanently Prohibited
+              </h5>
+              <p className="text-xs text-gray-400 mt-0.5">
+                The agent signing key is strictly isolated and will not sign or broadcast this transaction.
+              </p>
+            </div>
+          </div>
+          <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-red-500/20 text-red-400 border border-red-500/30">
+            NON-EXECUTABLE PROPOSAL
+          </span>
+        </div>
+      )}
+
+      {/* 3. Expandable Proposal Audit Record */}
+      {prepareResult && (
+        <div className="border border-border/50 rounded-xl overflow-hidden bg-surface">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="w-full px-6 py-3 flex items-center justify-between text-sm text-gray-400 hover:text-gray-200 transition-colors bg-surface-hover/50"
+            className="w-full px-6 py-3 flex items-center justify-between text-xs text-gray-400 hover:text-gray-200 transition-colors bg-surface-hover/50"
           >
-            <span>View Proposal Summary</span>
+            <span>View Full Diagnostic &amp; Proposal Audit Trail</span>
             {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
 

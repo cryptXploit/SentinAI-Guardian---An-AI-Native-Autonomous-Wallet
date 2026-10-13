@@ -1,0 +1,21 @@
+{
+  "scenarioId": "safe-bounded-approval",
+  "title": "Safe Bounded ERC-20 Approval",
+  "description": "Authorized bounded allowance of 50 USDC for Uniswap router.",
+  "isControlledScenario": true,
+  "intent": {
+    "action": "APPROVE",
+    "asset": "USDC",
+    "amount": "50",
+    "recipientAlias": "uniswap"
+  },
+  "resolvedRecipientOrSpender": "0x1111111254fb6c44bac0bed2854e76f90643097d",
+  "candidate": {
+    "to": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+    "value": "0",
+    "data": "0x095ea7b30000000000000000000000001111111254fb6c44bac0bed2854e76f90643097d0000000000000000000000000000000000000000000000000000000002faf080",
+    "chainId": 11155111
+  },
+  "expectedVerdict": "POLICY_COMPLIANT",
+  "expectedMismatches": []
+}

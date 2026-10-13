@@ -1,0 +1,21 @@
+{
+  "scenarioId": "safe-native-transfer",
+  "title": "Safe Native ETH Transfer",
+  "description": "Valid, authorized native ETH transfer within configured policy limit.",
+  "isControlledScenario": true,
+  "intent": {
+    "action": "TRANSFER",
+    "asset": "ETH",
+    "amount": "0.05",
+    "recipientAlias": "alice"
+  },
+  "resolvedRecipientOrSpender": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+  "candidate": {
+    "to": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+    "value": "50000000000000000",
+    "data": "0x",
+    "chainId": 11155111
+  },
+  "expectedVerdict": "POLICY_COMPLIANT",
+  "expectedMismatches": []
+}

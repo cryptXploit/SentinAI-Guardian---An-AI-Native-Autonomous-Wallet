@@ -3,25 +3,33 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { getPublicClient, verifySepoliaConnection, getNativeBalance } from './rpc-service';
 import { SUPPORTED_TOKENS, TokenInfo } from '../transaction/builder';
 
+export type BalanceStatus = 'AVAILABLE' | 'UNAVAILABLE' | 'NOT_CONFIGURED' | 'UNSUPPORTED';
+
 export type TokenBalance = {
   symbol: string;
   address: string;
   decimals: number;
-  rawBalance: bigint;
+  status: BalanceStatus;
+  rawBalance?: bigint;
   formattedBalance: string;
+  error?: string;
+};
+
+export type NativeBalance = {
+  symbol: 'ETH';
+  status: BalanceStatus;
+  raw?: bigint;
+  formatted: string;
   error?: string;
 };
 
 export type WalletOverview = {
   address: string;
   isConfigured: boolean;
+  canSign: boolean;
   network: string;
   chainId: number;
-  nativeBalance: {
-    raw: bigint;
-    formatted: string;
-    symbol: 'ETH';
-  };
+  nativeBalance: NativeBalance;
   tokens: TokenBalance[];
   latestBlock?: bigint;
   timestamp: string;
@@ -40,39 +48,67 @@ const ERC20_BALANCE_ABI = [
   },
 ] as const;
 
-// In-memory cache for wallet overview (10-second TTL)
-let _cachedOverview: { data: WalletOverview; expiresAt: number } | null = null;
+// Isolated in-memory cache for wallet overview (10-second TTL per address/rpc/chain)
+interface CacheEntry {
+  data: WalletOverview;
+  expiresAt: number;
+}
+
+const _walletCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 10_000;
+const MAX_CACHE_ENTRIES = 20;
+
+function getCacheKey(address: string, rpcUrl: string, chainId: number): string {
+  // Strip sensitive query params from RPC url if present
+  let safeRpc = rpcUrl;
+  try {
+    const parsed = new URL(rpcUrl);
+    safeRpc = `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    // If not a full URL, use as-is
+  }
+  return `${address.toLowerCase()}:${safeRpc}:${chainId}`;
+}
 
 /**
  * Resolves the agent's wallet address from private key or environment without exposing the secret.
+ * Also supports read-only public address configuration (AGENT_WALLET_ADDRESS / PUBLIC_WALLET_ADDRESS).
  */
-export function getAgentWalletAddress(): { address: string; isConfigured: boolean } {
+export function getAgentWalletAddress(): { address: string; isConfigured: boolean; canSign: boolean } {
   const privateKey = process.env.AGENT_PRIVATE_KEY;
-  if (!privateKey || !privateKey.startsWith('0x') || privateKey.length !== 66) {
+  if (privateKey && privateKey.startsWith('0x') && privateKey.length === 66) {
+    try {
+      const account = privateKeyToAccount(privateKey as `0x${string}`);
+      return {
+        address: account.address,
+        isConfigured: true,
+        canSign: true,
+      };
+    } catch {
+      // Fall through to public address check
+    }
+  }
+
+  // Check read-only public address (does not require custody of private key)
+  const publicAddress = process.env.AGENT_WALLET_ADDRESS || process.env.PUBLIC_WALLET_ADDRESS;
+  if (publicAddress && /^0x[0-9a-fA-F]{40}$/.test(publicAddress)) {
     return {
-      address: '0x0000000000000000000000000000000000000000',
-      isConfigured: false,
+      address: publicAddress,
+      isConfigured: true,
+      canSign: false,
     };
   }
 
-  try {
-    const account = privateKeyToAccount(privateKey as `0x${string}`);
-    return {
-      address: account.address,
-      isConfigured: true,
-    };
-  } catch {
-    return {
-      address: '0x0000000000000000000000000000000000000000',
-      isConfigured: false,
-    };
-  }
+  return {
+    address: '0x0000000000000000000000000000000000000000',
+    isConfigured: false,
+    canSign: false,
+  };
 }
 
 /**
  * Reads complete live wallet asset overview (ETH + supported ERC-20 tokens) on Sepolia.
- * Employs a 10-second cache to prevent redundant RPC calls during rapid dashboard renders.
+ * Employs isolated caching per address/rpc/chain to prevent cross-account cache contamination.
  */
 export async function getLiveWalletOverview(options?: {
   forceRefresh?: boolean;
@@ -81,32 +117,45 @@ export async function getLiveWalletOverview(options?: {
 }): Promise<WalletOverview> {
   const now = Date.now();
 
-  if (!options?.forceRefresh && _cachedOverview && now < _cachedOverview.expiresAt) {
-    return _cachedOverview.data;
-  }
-
-  const { address, isConfigured } = options?.customAddress
-    ? { address: options.customAddress, isConfigured: true }
+  const { address, isConfigured, canSign } = options?.customAddress
+    ? { address: options.customAddress, isConfigured: true, canSign: false }
     : getAgentWalletAddress();
+
+  const effectiveRpc = options?.customRpcUrl || process.env.RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com';
+  const cacheKey = getCacheKey(address, effectiveRpc, 11155111);
+
+  if (!options?.forceRefresh) {
+    const cached = _walletCache.get(cacheKey);
+    if (cached && now < cached.expiresAt) {
+      return cached.data;
+    }
+  }
 
   if (!isConfigured) {
     const unconfigured: WalletOverview = {
       address,
       isConfigured: false,
+      canSign: false,
       network: 'Sepolia',
       chainId: 11155111,
-      nativeBalance: { raw: BigInt(0), formatted: '0.0000', symbol: 'ETH' },
+      nativeBalance: {
+        symbol: 'ETH',
+        status: 'NOT_CONFIGURED',
+        formatted: '—',
+        error: 'Wallet address not configured',
+      },
       tokens: Object.values(SUPPORTED_TOKENS).map((t) => ({
         symbol: t.symbol,
         address: t.address,
         decimals: t.decimals,
-        rawBalance: BigInt(0),
-        formattedBalance: '0.0000',
+        status: 'NOT_CONFIGURED',
+        formattedBalance: '—',
+        error: 'Wallet address not configured',
       })),
       timestamp: new Date().toISOString(),
       rpcStatus: 'NOT_CONFIGURED',
       source: 'UNAVAILABLE',
-      error: 'AGENT_PRIVATE_KEY is not configured in .env.local',
+      error: 'AGENT_PRIVATE_KEY or AGENT_WALLET_ADDRESS is not configured in .env.local',
     };
     return unconfigured;
   }
@@ -118,15 +167,22 @@ export async function getLiveWalletOverview(options?: {
     const rpcUnavailable: WalletOverview = {
       address,
       isConfigured: true,
+      canSign,
       network: 'Sepolia',
       chainId: connection.chainId,
-      nativeBalance: { raw: BigInt(0), formatted: '0.0000', symbol: 'ETH' },
+      nativeBalance: {
+        symbol: 'ETH',
+        status: 'UNAVAILABLE',
+        formatted: '—',
+        error: connection.error || 'Sepolia RPC node is currently unreachable.',
+      },
       tokens: Object.values(SUPPORTED_TOKENS).map((t) => ({
         symbol: t.symbol,
         address: t.address,
         decimals: t.decimals,
-        rawBalance: BigInt(0),
-        formattedBalance: '0.0000',
+        status: 'UNAVAILABLE',
+        formattedBalance: '—',
+        error: connection.error || 'Sepolia RPC node unreachable',
       })),
       timestamp: new Date().toISOString(),
       rpcStatus: connection.status,
@@ -136,12 +192,23 @@ export async function getLiveWalletOverview(options?: {
     return rpcUnavailable;
   }
 
-  // 1. Fetch native ETH balance
-  let nativeEth = { raw: BigInt(0), formatted: '0.0000' };
+  // 1. Fetch native ETH balance (do not confuse unavailable with zero)
+  let nativeEth: NativeBalance;
   try {
-    nativeEth = await getNativeBalance(address, options?.customRpcUrl);
-  } catch {
-    // Native balance read failure handled
+    const res = await getNativeBalance(address, options?.customRpcUrl);
+    nativeEth = {
+      symbol: 'ETH',
+      status: 'AVAILABLE',
+      raw: res.raw,
+      formatted: res.formatted,
+    };
+  } catch (nativeErr: unknown) {
+    nativeEth = {
+      symbol: 'ETH',
+      status: 'UNAVAILABLE',
+      formatted: '—',
+      error: nativeErr instanceof Error ? nativeErr.message : 'Failed to read native ETH balance from RPC',
+    };
   }
 
   // 2. Fetch supported ERC-20 token balances concurrently
@@ -162,17 +229,19 @@ export async function getLiveWalletOverview(options?: {
         symbol: token.symbol,
         address: token.address,
         decimals: token.decimals,
+        status: 'AVAILABLE',
         rawBalance,
         formattedBalance: Number(formatted).toFixed(token.decimals > 6 ? 4 : 2),
       };
-    } catch (tokenErr) {
+    } catch (tokenErr: unknown) {
+      // RPC failure is NOT evidence of a zero balance
       return {
         symbol: token.symbol,
         address: token.address,
         decimals: token.decimals,
-        rawBalance: BigInt(0),
-        formattedBalance: '0.00',
-        error: (tokenErr as Error).message,
+        status: 'UNAVAILABLE',
+        formattedBalance: '—',
+        error: tokenErr instanceof Error ? tokenErr.message : 'Failed to read token balance from RPC',
       };
     }
   });
@@ -182,13 +251,10 @@ export async function getLiveWalletOverview(options?: {
   const result: WalletOverview = {
     address,
     isConfigured: true,
+    canSign,
     network: 'Sepolia',
     chainId: 11155111,
-    nativeBalance: {
-      raw: nativeEth.raw,
-      formatted: nativeEth.formatted,
-      symbol: 'ETH',
-    },
+    nativeBalance: nativeEth,
     tokens,
     latestBlock: connection.latestBlock,
     timestamp: new Date().toISOString(),
@@ -196,17 +262,23 @@ export async function getLiveWalletOverview(options?: {
     source: 'LIVE_RPC',
   };
 
-  _cachedOverview = {
+  // Cache isolation & eviction if needed
+  if (_walletCache.size >= MAX_CACHE_ENTRIES) {
+    const firstKey = _walletCache.keys().next().value;
+    if (firstKey) _walletCache.delete(firstKey);
+  }
+
+  _walletCache.set(cacheKey, {
     data: result,
     expiresAt: now + CACHE_TTL_MS,
-  };
+  });
 
   return result;
 }
 
 /**
- * Test helper: clears the in-memory wallet overview cache.
+ * Test helper: clears the isolated wallet overview cache.
  */
 export function _resetWalletCacheForTesting(): void {
-  _cachedOverview = null;
+  _walletCache.clear();
 }

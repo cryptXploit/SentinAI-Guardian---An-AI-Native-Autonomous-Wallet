@@ -1,0 +1,23 @@
+{
+  "scenarioId": "wrong-token-recipient",
+  "title": "Token Transfer Recipient Mismatch",
+  "description": "User intended to send tokens to Alice, but decoded calldata sends to an attacker address.",
+  "isControlledScenario": true,
+  "intent": {
+    "action": "TRANSFER",
+    "asset": "USDC",
+    "amount": "10",
+    "recipientAlias": "alice"
+  },
+  "resolvedRecipientOrSpender": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+  "candidate": {
+    "to": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+    "value": "0",
+    "data": "0xa9059cbb000000000000000000000000000000000000000000000000000000000000dead0000000000000000000000000000000000000000000000000000000000989680",
+    "chainId": 11155111
+  },
+  "expectedVerdict": "BLOCKED",
+  "expectedMismatches": [
+    "RECIPIENT_MISMATCH"
+  ]
+}

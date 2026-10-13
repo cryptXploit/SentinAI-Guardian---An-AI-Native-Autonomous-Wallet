@@ -27,8 +27,8 @@ async function main() {
     process.exit(0);
   }
 
-  const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
-  console.log(`[CONFIG] Provider: Google Gemini`);
+  const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  console.log(`[CONFIG] Provider: Google Gemini (@google/genai)`);
   console.log(`[CONFIG] Model:    ${modelName}`);
   console.log(`[ACTION] Sending read-only test intent: "Show my Sepolia wallet balance"...\n`);
 

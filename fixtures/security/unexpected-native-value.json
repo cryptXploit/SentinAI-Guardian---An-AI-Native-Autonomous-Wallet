@@ -1,0 +1,23 @@
+{
+  "scenarioId": "unexpected-native-value",
+  "title": "Unexpected Native ETH in Token Approval",
+  "description": "Candidate bundles 0.5 ETH transfer with an ERC-20 approval call.",
+  "isControlledScenario": true,
+  "intent": {
+    "action": "APPROVE",
+    "asset": "USDC",
+    "amount": "50",
+    "recipientAlias": "uniswap"
+  },
+  "resolvedRecipientOrSpender": "0x1111111254fb6c44bac0bed2854e76f90643097d",
+  "candidate": {
+    "to": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+    "value": "500000000000000000",
+    "data": "0x095ea7b30000000000000000000000001111111254fb6c44bac0bed2854e76f90643097d0000000000000000000000000000000000000000000000000000000002faf080",
+    "chainId": 11155111
+  },
+  "expectedVerdict": "BLOCKED",
+  "expectedMismatches": [
+    "UNEXPECTED_NATIVE_VALUE"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "scenarioId": "simulation-unavailable",
+  "title": "Simulation Reverted / RPC Gas Dry-Run Failure",
+  "description": "Transaction candidate triggers execution revert during RPC estimateGas dry-run.",
+  "isControlledScenario": true,
+  "intent": {
+    "action": "TRANSFER",
+    "asset": "USDC",
+    "amount": "10",
+    "recipientAlias": "alice"
+  },
+  "resolvedRecipientOrSpender": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+  "candidate": {
+    "to": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+    "value": "0",
+    "data": "0xa9059cbb000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa960450000000000000000000000000000000000000000000000000000000000989680",
+    "chainId": 11155111
+  },
+  "simulationSuccess": false,
+  "simulationError": "execution reverted: ERC20: transfer amount exceeds balance",
+  "expectedVerdict": "BLOCKED",
+  "expectedMismatches": []
+}

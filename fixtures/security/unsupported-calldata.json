@@ -1,0 +1,23 @@
+{
+  "scenarioId": "unsupported-calldata",
+  "title": "Unsupported Contract Method Selector",
+  "description": "Calldata calls an unrecognized smart contract function (e.g., 0xdeadbeef).",
+  "isControlledScenario": true,
+  "intent": {
+    "action": "TRANSFER",
+    "asset": "ETH",
+    "amount": "0.1",
+    "recipientAlias": "alice"
+  },
+  "resolvedRecipientOrSpender": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+  "candidate": {
+    "to": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+    "value": "100000000000000000",
+    "data": "0xdeadbeef0000000000000000000000000000000000000000000000000000000000000001",
+    "chainId": 11155111
+  },
+  "expectedVerdict": "BLOCKED",
+  "expectedMismatches": [
+    "UNSUPPORTED_CALLDATA"
+  ]
+}
