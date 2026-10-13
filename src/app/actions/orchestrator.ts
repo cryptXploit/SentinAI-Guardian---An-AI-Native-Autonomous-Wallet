@@ -1,6 +1,7 @@
 "use server";
 
 import { parseIntent } from "@/core/ai/intent-parser";
+import { getLastParsedProvenance } from "@/core/ai/provider";
 import { evaluatePolicy, PolicyDecision } from "@/core/policy/engine";
 import { buildTransaction, TransactionCandidate } from "@/core/transaction/builder";
 import { simulateTransaction } from "@/core/security/simulator";
@@ -50,6 +51,7 @@ export type ProposalSummary = {
   recipientAddress: string;
   gasEstimated?: string;
   proofDigest: string;
+  aiProvenance?: 'LIVE_AI' | 'DETERMINISTIC_FALLBACK';
 };
 
 export type QueryResult = {
@@ -64,6 +66,7 @@ export type PrepareResult = {
   isQuery?: boolean;
   isDemo?: boolean;
   provenance?: ProposalProvenance;
+  aiProvenance?: 'LIVE_AI' | 'DETERMINISTIC_FALLBACK';
   queryResult?: QueryResult;
   proposalId?: string;
   summary?: ProposalSummary;
@@ -96,8 +99,9 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
   let currentStep = "INTENT_PARSING";
 
   try {
-    // Step 1: Parse Intent (M2/R6)
+    // Step 1: Parse Intent (M2/R6/R8)
     const intent = await parseIntent(command);
+    const aiProvenance = getLastParsedProvenance();
 
     // Read-Only Query Routing (Milestone R6)
     // Read-only queries NEVER access private keys or create transaction proposals
@@ -112,6 +116,7 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
           isQuery: true,
           isDemo: false,
           provenance: 'LIVE_VERIFIED',
+          aiProvenance,
           queryResult: {
             action: 'QUERY_BALANCE',
             summary: `Wallet balance on Sepolia: ${overview.nativeBalance.formatted} ETH (${tokenSummaries})`,
@@ -126,6 +131,7 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
           isQuery: true,
           isDemo: false,
           provenance: 'LIVE_VERIFIED',
+          aiProvenance,
           queryResult: {
             action: 'QUERY_NETWORK',
             summary: `Connected to Ethereum Sepolia Testnet [Chain ID: ${connection.chainId}]${blockInfo} - Status: ${connection.status}`,
@@ -165,13 +171,15 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
         success: false,
         isDemo: false,
         provenance: 'UNVERIFIED',
+        aiProvenance,
         error: `Policy Blocked: ${blockedDecision.reason}`,
         step: "POLICY_EVALUATION",
         proposalId,
         summary: {
           action: intent.action, asset: intent.asset, amount: intent.amount,
           recipientAlias: intent.recipientAlias, recipientAddress: "Blocked",
-          proofDigest: blockedIIP.proofDigest
+          proofDigest: blockedIIP.proofDigest,
+          aiProvenance,
         }
       };
     }
@@ -254,6 +262,7 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
         success: false,
         isDemo: false,
         provenance: 'LIVE_VERIFIED',
+        aiProvenance,
         error:
           effectivePolicyDecision.reason ||
           simulation.revertReason ||
@@ -271,6 +280,7 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
           recipientAddress: candidate.to,
           gasEstimated: simulation.gasEstimated?.toString(),
           proofDigest: iip.proofDigest,
+          aiProvenance,
         },
       };
     }
@@ -279,6 +289,7 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
       success: true,
       isDemo: false,
       provenance: 'LIVE_VERIFIED',
+      aiProvenance,
       proposalId,
       analysis,
       exposure,
@@ -291,6 +302,7 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
         recipientAddress: candidate.to,
         gasEstimated: simulation.gasEstimated?.toString(),
         proofDigest: iip.proofDigest,
+        aiProvenance,
       },
     };
 

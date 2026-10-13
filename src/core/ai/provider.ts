@@ -133,6 +133,20 @@ export function classifyAiError(
     };
   }
 
+  // HTTP 500: Internal Server Error
+  if (
+    codeVal === 500 ||
+    codeVal === 'INTERNAL' ||
+    lower.includes('500') ||
+    lower.includes('internal server error')
+  ) {
+    return {
+      classification: 'SERVICE_UNAVAILABLE',
+      message: 'Gemini provider internal server error (HTTP 500).',
+      httpStatus: 500,
+    };
+  }
+
   // HTTP 503: Service Unavailable (high demand / backend spike)
   if (
     codeVal === 503 ||
@@ -170,6 +184,16 @@ export function classifyAiError(
     classification: 'INVALID_RESPONSE',
     message: rawMsg,
   };
+}
+
+let _lastParsedProvenance: 'LIVE_AI' | 'DETERMINISTIC_FALLBACK' = 'DETERMINISTIC_FALLBACK';
+
+export function getLastParsedProvenance(): 'LIVE_AI' | 'DETERMINISTIC_FALLBACK' {
+  return _lastParsedProvenance;
+}
+
+export function _setLastParsedProvenanceForTesting(provenance: 'LIVE_AI' | 'DETERMINISTIC_FALLBACK'): void {
+  _lastParsedProvenance = provenance;
 }
 
 export class GeminiIntentProvider implements IntentAIProvider {
@@ -251,6 +275,7 @@ export class GeminiIntentProvider implements IntentAIProvider {
       const responseText = response.text || '';
       const rawJson = JSON.parse(responseText);
 
+      _lastParsedProvenance = 'LIVE_AI';
       return ParsedIntentSchema.parse(rawJson);
     } catch (error: unknown) {
       this._lastLatencyMs = Date.now() - startTime;
@@ -281,67 +306,218 @@ export class MockIntentProvider implements IntentAIProvider {
       throw new Error(`INPUT_TOO_LONG: Command exceeds maximum length of ${MAX_COMMAND_LENGTH} characters.`);
     }
 
-    const trimmed = command.trim().toLowerCase();
+    // 1. Sanitization: strip injection tags, system prefixes, and trailing punctuation
+    let sanitized = command
+      .replace(/<\/?script[^>]*>/gi, '')
+      .replace(/<\/?iframe[^>]*>/gi, '')
+      .replace(/^system\s*:\s*/gi, '')
+      .replace(/^assistant\s*:\s*/gi, '')
+      .trim();
 
-    let result: ParsedIntent;
+    sanitized = sanitized.replace(/[?.!,;]+$/, '').trim();
 
-    // 1. Read-only queries
+    // Strip leading conversational/polite filler phrases
+    sanitized = sanitized.replace(/^(please|can you|could you|kindly|i want to|i would like to|help me)\s+/i, '').trim();
+
+    const lower = sanitized.toLowerCase();
+
+    // 2. Adversarial & Out-of-Domain Detection
+    // Unconditional rejection for jailbreaks, prompt leaks, system overrides, translation attacks, and drain scams
     if (
-      trimmed.includes('balance') ||
-      trimmed.includes('how much') ||
-      trimmed.includes('check funds') ||
-      trimmed.includes('my tokens') ||
-      trimmed.includes('show assets')
+      lower.startsWith('translate ') ||
+      lower.includes('translate to') ||
+      lower.includes('jailbreak') ||
+      lower.includes('disregard previous') ||
+      lower.includes('you are now') ||
+      lower.includes('system directive') ||
+      lower.includes('private_key') ||
+      lower.includes('seed phrase') ||
+      lower.includes('pre-approved by admin') ||
+      lower.includes('drain wallet') ||
+      lower.includes('drain ')
     ) {
-      let asset = 'ETH';
-      if (trimmed.includes('usdc')) asset = 'USDC';
-      else if (trimmed.includes('usdt')) asset = 'USDT';
-      else if (trimmed.includes('dai')) asset = 'DAI';
+      this._lastLatencyMs = Date.now() - startTime;
+      return { action: 'UNKNOWN', asset: 'ETH', amount: '0', recipientAlias: '' };
+    }
 
-      result = {
-        action: 'QUERY_BALANCE',
-        asset,
-        amount: '0',
-        recipientAlias: '',
-      };
-    } else if (
-      trimmed.includes('network') ||
-      trimmed.includes('which chain') ||
-      trimmed.includes('block number') ||
-      trimmed.includes('connection status')
+    // 3. Network Queries
+    if (
+      lower === 'network' ||
+      lower.includes('which chain') ||
+      lower.includes('what network') ||
+      lower.includes('block number') ||
+      lower.includes('connection status') ||
+      lower.includes('which network')
     ) {
-      result = {
+      this._lastLatencyMs = Date.now() - startTime;
+      return {
         action: 'QUERY_NETWORK',
         asset: 'ETH',
         amount: '0',
         recipientAlias: '',
       };
-    } else {
-      // 2. State-changing transaction actions
-      const transferMatch = command.match(/send\s+([0-9.]+)\s*([a-zA-Z]+)?\s+to\s+([a-zA-Z0-9_-]+)/i);
-      const approveMatch = command.match(/approve\s+([0-9.]+|unlimited)\s*([a-zA-Z]+)?\s+for\s+([a-zA-Z0-9_-]+)/i);
+    }
 
-      if (transferMatch) {
-        result = {
-          action: 'TRANSFER',
-          amount: transferMatch[1],
-          asset: (transferMatch[2] || 'ETH').toUpperCase(),
-          recipientAlias: transferMatch[3],
-        };
-      } else if (approveMatch) {
+    // 4. Balance Queries
+    if (
+      (lower.includes('balance') ||
+       lower.includes('how much') ||
+       lower.includes('check funds') ||
+       lower.includes('my tokens') ||
+       lower.includes('show assets') ||
+       lower.includes('dekhao') ||
+       lower.includes('koto')) &&
+      !lower.includes('send ') &&
+      !lower.includes('transfer ') &&
+      !lower.includes('pay ') &&
+      !lower.includes('approve ')
+    ) {
+      let asset = 'ETH';
+      if (lower.includes('usdc')) asset = 'USDC';
+      else if (lower.includes('usdt')) asset = 'USDT';
+      else if (lower.includes('dai')) asset = 'DAI';
+
+      this._lastLatencyMs = Date.now() - startTime;
+      return {
+        action: 'QUERY_BALANCE',
+        asset,
+        amount: '0',
+        recipientAlias: '',
+      };
+    }
+
+    // Pre-normalize natural word numbers
+    const normalized = sanitized
+      .replace(/\bhalf\s+an?\s+ether\b/gi, '0.5 ETH')
+      .replace(/\bhalf\s+an?\s+eth\b/gi, '0.5 ETH')
+      .replace(/\ba\s+quarter\s+eth\b/gi, '0.25 ETH')
+      .replace(/\bone\s+eth\b/gi, '1 ETH');
+
+    // Helper to validate and clean numeric amount string
+    const isValidAmount = (amt: string): boolean => {
+      if (!amt) return false;
+      if (amt.toUpperCase() === 'UNLIMITED' || amt.toUpperCase() === 'MAX') return true;
+      return /^\d+(\.\d+)?$/.test(amt);
+    };
+
+    // Helper to clean recipient alias/address
+    const cleanRecipient = (rec: string): string => {
+      if (!rec) return '';
+      return rec.replace(/[;,].*$/, '').replace(/[?.!]+$/, '').trim();
+    };
+
+    let result: ParsedIntent;
+
+    // 5. Swap
+    const swapMatch = normalized.match(/swap\s+([0-9.]+)\s*([a-zA-Z]+)?\s+for\s+([a-zA-Z]+)/i);
+    if (swapMatch && isValidAmount(swapMatch[1])) {
+      result = {
+        action: 'SWAP',
+        amount: swapMatch[1],
+        asset: (swapMatch[2] || 'ETH').toUpperCase(),
+        recipientAlias: '',
+      };
+    } else {
+      // 6. Deposit (Maps to APPROVE for DeFi protocols)
+      const depositMatch = normalized.match(/deposit\s+([0-9.]+)\s*([a-zA-Z]+)?\s+into\s+([a-zA-Z0-9_.-]+)/i);
+      if (depositMatch && isValidAmount(depositMatch[1])) {
         result = {
           action: 'APPROVE',
-          amount: approveMatch[1].toLowerCase() === 'unlimited' ? 'UNLIMITED' : approveMatch[1],
-          asset: (approveMatch[2] || 'ETH').toUpperCase(),
-          recipientAlias: approveMatch[3],
+          amount: depositMatch[1],
+          asset: (depositMatch[2] || 'ETH').toUpperCase(),
+          recipientAlias: cleanRecipient(depositMatch[3]),
         };
       } else {
-        result = {
-          action: 'UNKNOWN',
-          asset: 'ETH',
-          amount: '0',
-          recipientAlias: '',
-        };
+        // 7. State-Changing Transfers
+        // 7a. Max / All amount: send maximum possible ETH to bob
+        const transferMaxMatch = normalized.match(/(?:send|transfer|pay|give)\s+(?:maximum\s+possible|max\s+possible|maximum|max|all)\s+([a-zA-Z]+)?\s+to\s+([a-zA-Z0-9_.-]+)/i);
+        if (transferMaxMatch) {
+          result = {
+            action: 'TRANSFER',
+            amount: 'MAX',
+            asset: (transferMaxMatch[1] || 'ETH').toUpperCase(),
+            recipientAlias: cleanRecipient(transferMaxMatch[2]),
+          };
+        } else {
+          // 7b. Standard Form: (send|transfer|pay|give) <amount> [dollars of] <asset?> to <recipient>
+          const transferToMatch = normalized.match(/(?:send|transfer|pay|give)\s+([0-9.]+)\s*(?:dollars\s+of\s+)?([a-zA-Z]+)?\s+to\s+([a-zA-Z0-9_.-]+)/i);
+          if (transferToMatch && isValidAmount(transferToMatch[1])) {
+            result = {
+              action: 'TRANSFER',
+              amount: transferToMatch[1],
+              asset: (transferToMatch[2] || 'ETH').toUpperCase(),
+              recipientAlias: cleanRecipient(transferToMatch[3]),
+            };
+          } else {
+            // 7c. Reverse Form: (send|transfer|pay|give) <recipient> <amount> <asset?>
+            const transferDirectMatch = normalized.match(/(?:send|transfer|pay|give)\s+([a-zA-Z0-9_.-]+)\s+([0-9.]+)\s*([a-zA-Z]+)?/i);
+            if (transferDirectMatch && isValidAmount(transferDirectMatch[2])) {
+              const candidateRecipient = cleanRecipient(transferDirectMatch[1]);
+              if (!/^(to|the|my|a|an)$/i.test(candidateRecipient)) {
+                result = {
+                  action: 'TRANSFER',
+                  amount: transferDirectMatch[2],
+                  asset: (transferDirectMatch[3] || 'ETH').toUpperCase(),
+                  recipientAlias: candidateRecipient,
+                };
+              } else {
+                result = { action: 'UNKNOWN', asset: 'ETH', amount: '0', recipientAlias: '' };
+              }
+            } else {
+              // 7d. Banglish / Bengali Form: <recipient> ke <amount> <asset?> (pathao|send koro|dao)
+              const banglishMatch = normalized.match(/([a-zA-Z0-9_.-]+)\s*ke\s+([0-9.]+)\s*([a-zA-Z]+)?\s*(?:pathao|send\s*koro|dao)/i);
+              if (banglishMatch && isValidAmount(banglishMatch[2])) {
+                result = {
+                  action: 'TRANSFER',
+                  amount: banglishMatch[2],
+                  asset: (banglishMatch[3] || 'ETH').toUpperCase(),
+                  recipientAlias: cleanRecipient(banglishMatch[1]),
+                };
+              } else {
+                // 8. Approvals
+                // 8a. Standard Form: approve <amount|unlimited> <asset?> for <spender>
+                const approveForMatch = normalized.match(/approve\s+([0-9.]+|unlimited)\s*([a-zA-Z]+)?\s+for\s+([a-zA-Z0-9_.-]+)/i);
+                if (approveForMatch && isValidAmount(approveForMatch[1])) {
+                  result = {
+                    action: 'APPROVE',
+                    amount: approveForMatch[1].toLowerCase() === 'unlimited' ? 'UNLIMITED' : approveForMatch[1],
+                    asset: (approveForMatch[2] || 'ETH').toUpperCase(),
+                    recipientAlias: cleanRecipient(approveForMatch[3]),
+                  };
+                } else {
+                  // 8b. Natural Form: approve <spender> to spend <amount|unlimited> <asset?>
+                  const approveToSpendMatch = normalized.match(/approve\s+([a-zA-Z0-9_.-]+)\s+to\s+spend\s+([0-9.]+|unlimited)\s*([a-zA-Z]+)?/i);
+                  if (approveToSpendMatch && isValidAmount(approveToSpendMatch[2])) {
+                    result = {
+                      action: 'APPROVE',
+                      amount: approveToSpendMatch[2].toLowerCase() === 'unlimited' ? 'UNLIMITED' : approveToSpendMatch[2],
+                      asset: (approveToSpendMatch[3] || 'ETH').toUpperCase(),
+                      recipientAlias: cleanRecipient(approveToSpendMatch[1]),
+                    };
+                  } else {
+                    // 8c. Allow Form: allow <spender> <amount|unlimited> <asset?>
+                    const allowMatch = normalized.match(/allow\s+([a-zA-Z0-9_.-]+)\s+([0-9.]+|unlimited)\s*([a-zA-Z]+)?/i);
+                    if (allowMatch && isValidAmount(allowMatch[2])) {
+                      result = {
+                        action: 'APPROVE',
+                        amount: allowMatch[2].toLowerCase() === 'unlimited' ? 'UNLIMITED' : allowMatch[2],
+                        asset: (allowMatch[3] || 'ETH').toUpperCase(),
+                        recipientAlias: cleanRecipient(allowMatch[1]),
+                      };
+                    } else {
+                      result = {
+                        action: 'UNKNOWN',
+                        asset: 'ETH',
+                        amount: '0',
+                        recipientAlias: '',
+                      };
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
 

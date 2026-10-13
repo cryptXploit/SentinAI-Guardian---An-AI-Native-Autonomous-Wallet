@@ -64,9 +64,20 @@ export default function EvidencePanel({
                 <h3 className="text-lg font-semibold text-foreground">
                   {isBalance ? "Live Wallet Intelligence" : "Sepolia Network Status"}
                 </h3>
-                <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-accent-blue/10 text-accent-blue border border-accent-blue/20">
-                  READ-ONLY · NO SIGNER REQUIRED
-                </span>
+                <div className="flex items-center gap-2">
+                  {prepareResult.aiProvenance && (
+                    <span className={`px-2.5 py-1 text-xs font-mono font-medium rounded-full border ${
+                      prepareResult.aiProvenance === 'LIVE_AI'
+                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                        : "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                    }`}>
+                      {prepareResult.aiProvenance === 'LIVE_AI' ? 'LIVE AI' : 'FALLBACK PARSER'}
+                    </span>
+                  )}
+                  <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-accent-blue/10 text-accent-blue border border-accent-blue/20">
+                    READ-ONLY · NO SIGNER REQUIRED
+                  </span>
+                </div>
               </div>
 
               <p className="text-sm text-gray-300 mt-2">{q.summary}</p>

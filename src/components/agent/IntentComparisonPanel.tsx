@@ -113,6 +113,15 @@ export default function IntentComparisonPanel({
         </div>
 
         <div className="flex items-center gap-2">
+          {summary?.aiProvenance && (
+            <span className={`hidden sm:inline-block px-2.5 py-0.5 rounded-full text-xs font-mono font-medium border ${
+              summary.aiProvenance === 'LIVE_AI'
+                ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                : "bg-blue-500/15 text-blue-300 border-blue-500/30"
+            }`}>
+              {summary.aiProvenance === 'LIVE_AI' ? 'LIVE AI' : 'FALLBACK PARSER'}
+            </span>
+          )}
           {isDemo && (
             <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30">
               SIMULATED

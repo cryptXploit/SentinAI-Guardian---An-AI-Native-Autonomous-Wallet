@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSession, validateSessionToken } from '@/core/security/auth';
+import { createSession, validateSessionToken, verifyPasswordConstantTime } from '@/core/security/auth';
 
 // Rate limiting: track failed attempts per IP
 const failedAttempts = new Map<string, { count: number; lastAttempt: number }>();
@@ -59,8 +59,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Constant-time comparison is not critical for demo but we validate correctly
-    if (password !== configuredPassword) {
+    // Constant-time comparison using pre-hashed buffers to eliminate timing side-channels
+    if (!verifyPasswordConstantTime(password, configuredPassword)) {
       recordFailedAttempt(ip);
       return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
     }

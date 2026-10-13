@@ -1,5 +1,16 @@
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash, timingSafeEqual } from 'crypto';
 import { getDb } from './proposal';
+
+/**
+ * Constant-time comparison for passwords and sensitive tokens.
+ * Uses SHA-256 pre-hashing to ensure equal buffer lengths and eliminate timing side-channels.
+ */
+export function verifyPasswordConstantTime(provided: string, expected: string): boolean {
+  if (typeof provided !== 'string' || typeof expected !== 'string') return false;
+  const hashA = createHash('sha256').update(provided).digest();
+  const hashB = createHash('sha256').update(expected).digest();
+  return timingSafeEqual(hashA, hashB);
+}
 
 export type SessionContext = {
   userId: string;
