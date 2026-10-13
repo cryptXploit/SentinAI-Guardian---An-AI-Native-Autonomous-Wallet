@@ -5,7 +5,7 @@ import { evaluatePolicy, PolicyDecision } from "@/core/policy/engine";
 import { buildTransaction, TransactionCandidate } from "@/core/transaction/builder";
 import { simulateTransaction } from "@/core/security/simulator";
 import { generateIIP, verifyIIPDigest } from "@/core/security/iip";
-import { executeTransaction, ExecutionResult } from "@/core/execution/controller";
+import { broadcastTransaction, waitForReceipt, ExecutionResult } from "@/core/execution/controller";
 import { UserPolicy } from "@/core/domain/schemas";
 import { verifySession } from "@/core/security/auth";
 import {
@@ -13,8 +13,8 @@ import {
   retrieveProposal,
   authorizeProposal,
   lockProposalForExecution,
+  markSubmitted,
   updateProposalStatus,
-  recordTxHash,
   isProposalExpired,
   getProposalStatus,
 } from "@/core/security/proposal";
@@ -260,35 +260,61 @@ export async function authorizeAndExecute(proposalId: string): Promise<Authorize
     throw new Error("MISSING_CREDENTIALS: Real execution requires configured private key and RPC URL.");
   }
 
-  // Execute with crash-safe state tracking
+  // Execute with crash-safe phased approach:
+  // Phase B: Broadcast → Phase C: Persist hash & SUBMITTED state → Phase D: Wait receipt → Phase E: Final state
   try {
-    const executionResult = await executeTransaction(iip, privateKey, rpcUrl);
+    // Phase B: Broadcast signed transaction
+    const { hash } = await broadcastTransaction(iip, privateKey, rpcUrl);
 
-    // Record tx hash if available (crash recovery evidence)
-    if (executionResult.transactionHash) {
-      recordTxHash(proposalId, executionResult.transactionHash);
+    // Phase C: Persist hash & transition to SUBMITTED IMMEDIATELY (before waiting for receipt)
+    markSubmitted(proposalId, hash);
+
+    // Phase D: Wait for receipt confirmation
+    try {
+      const receipt = await waitForReceipt(hash, rpcUrl);
+
+      // Phase E: Final verification — mark terminal state
+      if (receipt.status === 'success') {
+        updateProposalStatus(proposalId, "CONFIRMED");
+        return {
+          success: true,
+          proposalId,
+          executionResult: {
+            success: true,
+            transactionHash: hash,
+            receiptStatus: 'success',
+          }
+        };
+      } else {
+        updateProposalStatus(proposalId, "REVERTED");
+        return {
+          success: false,
+          proposalId,
+          executionResult: {
+            success: false,
+            transactionHash: hash,
+            receiptStatus: 'reverted',
+          }
+        };
+      }
+    } catch (receiptError) {
+      // Hash exists and is persisted in SUBMITTED state, but receipt polling timed out.
+      // Transition to RECONCILIATION_REQUIRED so it is explicitly tracked for reconciliation.
+      updateProposalStatus(proposalId, "RECONCILIATION_REQUIRED");
+      return {
+        success: false,
+        proposalId,
+        error: `RECEIPT_PENDING: Transaction broadcast (${hash.slice(0, 10)}...) but receipt not yet confirmed. ` +
+               `Proposal locked for reconciliation. Error: ${(receiptError as Error).message}`
+      };
     }
-
-    // Record terminal state
-    if (executionResult.success) {
-      updateProposalStatus(proposalId, "CONFIRMED");
-    } else {
-      const terminalStatus = executionResult.receiptStatus === "reverted" ? "REVERTED" : "FAILED";
-      updateProposalStatus(proposalId, terminalStatus);
-    }
-
-    return {
-      success: executionResult.success,
-      proposalId,
-      executionResult
-    };
-  } catch (error) {
-    // Execution threw — proposal remains SUBMITTING for reconciliation
-    // Do NOT automatically reset to PREPARED (would enable duplicate broadcast)
+  } catch (broadcastError) {
+    // Broadcast itself failed — transaction was NOT sent to network
+    updateProposalStatus(proposalId, "FAILED_BEFORE_BROADCAST");
     return {
       success: false,
       proposalId,
-      error: `EXECUTION_UNCERTAIN: ${(error as Error).message}. Proposal locked for reconciliation.`
+      error: `BROADCAST_FAILED: ${(broadcastError as Error).message}`
     };
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, ChevronDown, ChevronUp, ShieldX, ShieldCheck, ArrowRight, Loader2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp, ShieldX, ShieldCheck, ArrowRight, Loader2, Clock } from "lucide-react";
 import { PrepareResult, AuthorizeResult } from "@/app/actions/orchestrator";
 
 interface EvidencePanelProps {
@@ -26,21 +26,40 @@ export default function EvidencePanel({
   // Phase 2 Completed: Execution outcome
   if (executionResult) {
     const isSuccess = executionResult.success && executionResult.executionResult?.success;
+    const isPendingReceipt = !isSuccess && Boolean(executionResult.error?.includes("RECEIPT_PENDING"));
+
+    const cardBorder = isSuccess
+      ? 'border-success/20 bg-success/5'
+      : isPendingReceipt
+      ? 'border-amber-500/20 bg-amber-500/5'
+      : 'border-danger/20 bg-danger/5';
+
+    const titleColor = isSuccess
+      ? 'text-success'
+      : isPendingReceipt
+      ? 'text-amber-400'
+      : 'text-danger';
 
     return (
-      <div className={`border rounded-xl overflow-hidden ${isSuccess ? 'border-success/20 bg-success/5' : 'border-danger/20 bg-danger/5'}`}>
+      <div className={`border rounded-xl overflow-hidden ${cardBorder}`}>
         <div className="p-6">
           <div className="flex items-start gap-4">
             <div className="mt-1">
               {isSuccess ? (
                 <CheckCircle2 className="w-8 h-8 text-success" />
+              ) : isPendingReceipt ? (
+                <Clock className="w-8 h-8 text-amber-400 animate-pulse" />
               ) : (
                 <ShieldX className="w-8 h-8 text-danger" />
               )}
             </div>
             <div className="flex-1">
-              <h3 className={`text-lg font-semibold ${isSuccess ? 'text-success' : 'text-danger'}`}>
-                {isSuccess ? "Transaction Authorized & Executed" : "Execution Blocked / Failed"}
+              <h3 className={`text-lg font-semibold ${titleColor}`}>
+                {isSuccess
+                  ? "Transaction Authorized & Confirmed"
+                  : isPendingReceipt
+                  ? "Transaction Broadcast — Pending On-Chain Confirmation"
+                  : "Execution Blocked / Failed"}
               </h3>
 
               {isSuccess && executionResult.executionResult?.transactionHash ? (
@@ -53,6 +72,20 @@ export default function EvidencePanel({
                   </p>
                   <p className="text-sm text-gray-400">
                     <span className="font-medium text-gray-400">Status:</span> {executionResult.executionResult.receiptStatus || "confirmed"}
+                  </p>
+                </div>
+              ) : isPendingReceipt ? (
+                <div className="mt-2 space-y-1">
+                  <p className="text-sm text-gray-300">
+                    {executionResult.error}
+                  </p>
+                  {executionResult.proposalId && (
+                    <p className="text-sm text-gray-400">
+                      <span className="font-medium text-gray-400">Proposal ID:</span> {executionResult.proposalId}
+                    </p>
+                  )}
+                  <p className="text-xs text-amber-400/80 mt-1">
+                    Evidence safely locked in database. You may reconcile this transaction once block confirmation completes.
                   </p>
                 </div>
               ) : (

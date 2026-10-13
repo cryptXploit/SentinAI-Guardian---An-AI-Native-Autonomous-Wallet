@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTransaction, SUPPORTED_TOKENS, MAX_UINT256 } from '../builder';
+import { buildTransaction, SUPPORTED_TOKENS } from '../builder';
 import { ParsedIntent } from '../../domain/schemas';
 
 describe('Transaction Builder', () => {

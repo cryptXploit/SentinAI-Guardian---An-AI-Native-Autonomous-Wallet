@@ -10,6 +10,71 @@ export type ExecutionResult = {
   receiptStatus?: string;
 };
 
+/**
+ * Phase B: Broadcast a signed transaction to the network.
+ * Returns the transaction hash immediately without waiting for confirmation.
+ * The hash must be persisted BEFORE calling waitForReceipt.
+ */
+export async function broadcastTransaction(
+  iip: IntentIntegrityProof,
+  privateKey: string,
+  rpcUrl: string
+): Promise<{ hash: string }> {
+  // CRITICAL SECURITY GATE
+  if (iip.finalDecision !== "ALLOW_FOR_AUTHORIZATION") {
+    throw new Error("UNAUTHORIZED_EXECUTION");
+  }
+
+  const account = privateKeyToAccount(privateKey as `0x${string}`);
+
+  const walletClient = createWalletClient({
+    account,
+    chain: sepolia,
+    transport: http(rpcUrl)
+  });
+
+  const hash = await walletClient.sendTransaction({
+    to: iip.candidate.to as Address,
+    value: iip.candidate.value,
+    data: (iip.candidate.data as `0x${string}`) || '0x'
+  });
+
+  return { hash };
+}
+
+/**
+ * Phase D: Wait for transaction receipt confirmation.
+ * Call ONLY after the hash has been durably persisted.
+ * Returns the receipt status or throws on timeout/error.
+ */
+export async function waitForReceipt(
+  hash: string,
+  rpcUrl: string
+): Promise<{ status: 'success' | 'reverted'; blockNumber: bigint }> {
+  const publicClient = createPublicClient({
+    chain: sepolia,
+    transport: http(rpcUrl)
+  });
+
+  const receipt = await publicClient.waitForTransactionReceipt({
+    hash: hash as `0x${string}`,
+    timeout: 120_000, // 2 minutes max wait
+  });
+
+  return {
+    status: receipt.status,
+    blockNumber: receipt.blockNumber,
+  };
+}
+
+/**
+ * Combined execution for backward compatibility.
+ * Broadcasts, then waits for receipt. Returns unified result.
+ *
+ * WARNING: Crash between broadcast and receipt persistence leaves
+ * the transaction in SUBMITTING state. Use broadcastTransaction +
+ * recordTxHash + waitForReceipt for crash-safe execution.
+ */
 export async function executeTransaction(
   iip: IntentIntegrityProof,
   privateKey?: string,
@@ -25,32 +90,25 @@ export async function executeTransaction(
   }
 
   try {
-    const account = privateKeyToAccount(privateKey as `0x${string}`);
+    const { hash } = await broadcastTransaction(iip, privateKey, rpcUrl);
 
-    const walletClient = createWalletClient({
-      account,
-      chain: sepolia,
-      transport: http(rpcUrl)
-    });
+    try {
+      const receipt = await waitForReceipt(hash, rpcUrl);
 
-    const publicClient = createPublicClient({
-      chain: sepolia,
-      transport: http(rpcUrl)
-    });
-
-    const hash = await walletClient.sendTransaction({
-      to: iip.candidate.to as Address,
-      value: iip.candidate.value,
-      data: (iip.candidate.data as `0x${string}`) || '0x'
-    });
-
-    const receipt = await publicClient.waitForTransactionReceipt({ hash });
-
-    return {
-      success: receipt.status === 'success',
-      transactionHash: hash,
-      receiptStatus: receipt.status
-    };
+      return {
+        success: receipt.status === 'success',
+        transactionHash: hash,
+        receiptStatus: receipt.status
+      };
+    } catch (receiptError) {
+      // Hash exists but receipt failed — transaction may be pending
+      return {
+        success: false,
+        transactionHash: hash,
+        error: `RECEIPT_TIMEOUT: ${(receiptError as Error).message}`,
+        receiptStatus: 'pending'
+      };
+    }
   } catch (error) {
     return {
       success: false,

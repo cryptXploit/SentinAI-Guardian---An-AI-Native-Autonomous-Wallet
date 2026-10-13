@@ -12,7 +12,7 @@ export default function AgentConsole() {
   const [prepareResult, setPrepareResult] = useState<PrepareResult | null>(null);
   const [executionResult, setExecutionResult] = useState<AuthorizeResult | null>(null);
   
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
 
   const handlePrepare = async (e: React.FormEvent) => {
     e.preventDefault();

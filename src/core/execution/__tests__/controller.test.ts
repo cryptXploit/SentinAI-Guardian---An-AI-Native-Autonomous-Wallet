@@ -55,17 +55,17 @@ describe('Execution Controller', () => {
 
   it('should return valid execution result on successful viem broadcast', async () => {
     const { createWalletClient, createPublicClient } = await import('viem');
-    
-    (createWalletClient as any).mockReturnValueOnce({
-      sendTransaction: vi.fn().mockResolvedValue("0xrealhash")
-    });
 
-    (createPublicClient as any).mockReturnValueOnce({
-      waitForTransactionReceipt: vi.fn().mockResolvedValue({ status: "success" })
-    });
+    vi.mocked(createWalletClient).mockReturnValueOnce({
+      sendTransaction: vi.fn().mockResolvedValue("0xrealhash" as `0x${string}`)
+    } as unknown as ReturnType<typeof createWalletClient>);
+
+    vi.mocked(createPublicClient).mockReturnValueOnce({
+      waitForTransactionReceipt: vi.fn().mockResolvedValue({ status: "success", blockNumber: BigInt(1) })
+    } as unknown as ReturnType<typeof createPublicClient>);
 
     const result = await executeTransaction(dummyIIP, "0xabc", "http://rpc.url");
-    
+
     expect(result.success).toBe(true);
     expect(result.transactionHash).toBe("0xrealhash");
     expect(result.receiptStatus).toBe("success");
@@ -73,15 +73,15 @@ describe('Execution Controller', () => {
 
   it('should catch broadcasting errors safely', async () => {
     const { createWalletClient, createPublicClient } = await import('viem');
-    
-    (createWalletClient as any).mockReturnValueOnce({
-      sendTransaction: vi.fn().mockRejectedValue(new Error("nonce too low"))
-    });
 
-    (createPublicClient as any).mockReturnValueOnce({}); 
+    vi.mocked(createWalletClient).mockReturnValueOnce({
+      sendTransaction: vi.fn().mockRejectedValue(new Error("nonce too low"))
+    } as unknown as ReturnType<typeof createWalletClient>);
+
+    vi.mocked(createPublicClient).mockReturnValueOnce({} as unknown as ReturnType<typeof createPublicClient>);
 
     const result = await executeTransaction(dummyIIP, "0xabc", "http://rpc.url");
-    
+
     expect(result.success).toBe(false);
     expect(result.error).toContain("nonce too low");
   });

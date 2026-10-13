@@ -56,7 +56,7 @@ export default async function Home() {
     <div className="max-w-5xl mx-auto space-y-6">
       <header>
         <h1 className="text-3xl font-bold tracking-tight">Overview</h1>
-        <p className="text-gray-400 mt-2">Monitor your autonomous agent's activity and security status.</p>
+        <p className="text-gray-400 mt-2">Monitor your autonomous agent&apos;s activity and security status.</p>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

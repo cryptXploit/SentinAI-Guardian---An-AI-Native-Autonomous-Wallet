@@ -1,4 +1,7 @@
+"use client";
+
 import { ShieldCheck } from 'lucide-react';
+import { LogoutButton } from '@/components/auth/AuthGate';
 
 export default function TopBar() {
   return (
@@ -15,6 +18,7 @@ export default function TopBar() {
           <ShieldCheck className="w-4 h-4" />
           Protected
         </div>
+        <LogoutButton />
       </div>
     </header>
   );

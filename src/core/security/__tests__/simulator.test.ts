@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { simulateTransaction } from '../simulator';
 import { TransactionCandidate } from '../../transaction/builder';
+import { createPublicClient } from 'viem';
 
 vi.mock('viem', async (importOriginal) => {
   const actual = await importOriginal() as typeof import('viem');
@@ -28,10 +29,9 @@ describe('Transaction Simulation Engine', () => {
   });
 
   it('should return success and gas on valid viem RPC simulation', async () => {
-    const { createPublicClient } = await import('viem');
-    (createPublicClient as any).mockReturnValueOnce({
+    vi.mocked(createPublicClient).mockReturnValueOnce({
       estimateGas: vi.fn().mockResolvedValue(BigInt("21000"))
-    });
+    } as unknown as ReturnType<typeof createPublicClient>);
 
     const result = await simulateTransaction(dummyCandidate, "https://mock-rpc.com");
     
@@ -41,10 +41,9 @@ describe('Transaction Simulation Engine', () => {
   });
 
   it('should return success=false and catch revert reason on RPC error', async () => {
-    const { createPublicClient } = await import('viem');
-    (createPublicClient as any).mockReturnValueOnce({
+    vi.mocked(createPublicClient).mockReturnValueOnce({
       estimateGas: vi.fn().mockRejectedValue(new Error("execution reverted: insufficient funds"))
-    });
+    } as unknown as ReturnType<typeof createPublicClient>);
 
     const result = await simulateTransaction(dummyCandidate, "https://mock-rpc.com");
     
