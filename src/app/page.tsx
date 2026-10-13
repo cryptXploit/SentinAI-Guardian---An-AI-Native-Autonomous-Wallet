@@ -3,6 +3,10 @@ import { getLiveWalletOverview } from "@/core/web3/wallet-service";
 import { Coins, ShieldCheck, Radio } from "lucide-react";
 import { connection } from "next/server";
 
+// Opt out of instant-navigation validation because this segment is conditionally gated
+// behind client-side AuthGate and performs dynamic per-connection live wallet state queries.
+export const instant = false;
+
 export default async function Home() {
   await connection();
   const wallet = await getLiveWalletOverview();
