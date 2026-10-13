@@ -8,7 +8,16 @@ import { generateIIP, verifyIIPDigest } from "@/core/security/iip";
 import { executeTransaction, ExecutionResult } from "@/core/execution/controller";
 import { UserPolicy } from "@/core/domain/schemas";
 import { verifySession } from "@/core/security/auth";
-import { storeProposal, retrieveProposal, lockProposalForExecution, updateProposalStatus } from "@/core/security/proposal";
+import {
+  storeProposal,
+  retrieveProposal,
+  authorizeProposal,
+  lockProposalForExecution,
+  updateProposalStatus,
+  recordTxHash,
+  isProposalExpired,
+  getProposalStatus,
+} from "@/core/security/proposal";
 
 const MOCK_USER_POLICY: UserPolicy = {
   maxTransferAmountETH: "1.0",
@@ -18,9 +27,6 @@ const MOCK_USER_POLICY: UserPolicy = {
     "bob": "0x1111111254fb6c44bac0bed2854e76f90643097d"
   }
 };
-
-
-
 
 export type ProposalSummary = {
   action: string;
@@ -48,29 +54,23 @@ export type AuthorizeResult = {
 };
 
 /**
- * Phase 1: Intent Preparation & Proposal Creation (Server-Owned, R5B Pipeline)
- * Reordered execution:
- * 1. Parse Intent (AI NLP)
- * 2. Resolve Recipient Alias
- * 3. Build Transaction Candidate
- * 4. Dry-run Simulation via RPC
- * 5. Deterministic Policy Evaluation against Candidate (Calldata Inspection)
- * 6. Intent Integrity Proof (IIP) Generation with Calldata Hash
- * 7. Store Server-Owned Proposal and Return Sanitized Summary
+ * Phase 1: Intent Preparation & Proposal Creation (R5D — Owner-Bound, Expiring)
+ * Pipeline: Parse -> Resolve -> Build -> Simulate -> Policy -> IIP -> Store
+ * Returns ONLY proposalId and sanitized summary. Never leaks raw IIP.
  */
 export async function prepareTransactionIntent(command: string): Promise<PrepareResult> {
-  // Authentication Barrier (VULN-R5-01)
+  // Authentication Barrier
   const session = await verifySession();
   if (!session) {
     throw new Error("UNAUTHORIZED_ACCESS: Authentication required to prepare transaction intent.");
   }
 
   let currentStep = "INTENT_PARSING";
-  
+
   try {
     // Step 1: Parse Intent (M2)
     const intent = await parseIntent(command);
-    
+
     // Step 2: Resolve Recipient
     currentStep = "RECIPIENT_RESOLUTION";
     const resolvedAddress = MOCK_USER_POLICY.trustedContacts[intent.recipientAlias];
@@ -85,17 +85,11 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
         chainId: 11155111
       };
       const blockedIIP = generateIIP(
-        intent,
-        fallbackCandidate,
-        blockedDecision,
-        {
-          success: false,
-          revertReason: `Policy blocked execution: ${blockedDecision.reason}`,
-          timestamp: new Date().toISOString()
-        }
+        intent, fallbackCandidate, blockedDecision,
+        { success: false, revertReason: `Policy blocked: ${blockedDecision.reason}`, timestamp: new Date().toISOString() }
       );
 
-      const proposalId = storeProposal(blockedIIP);
+      const proposalId = storeProposal(blockedIIP, session.userId);
 
       return {
         success: false,
@@ -103,11 +97,8 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
         step: "POLICY_EVALUATION",
         proposalId,
         summary: {
-          action: intent.action,
-          asset: intent.asset,
-          amount: intent.amount,
-          recipientAlias: intent.recipientAlias,
-          recipientAddress: "Blocked",
+          action: intent.action, asset: intent.asset, amount: intent.amount,
+          recipientAlias: intent.recipientAlias, recipientAddress: "Blocked",
           proofDigest: blockedIIP.proofDigest
         }
       };
@@ -125,24 +116,16 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
     }
     const simulation = await simulateTransaction(candidate, rpcUrl);
 
-    // Step 5: Deterministic Policy Evaluation against Candidate (M3 + R5B Calldata Decoding)
+    // Step 5: Deterministic Policy Evaluation against Candidate (R5B)
     currentStep = "POLICY_EVALUATION";
     const policyDecision = evaluatePolicy(intent, candidate, MOCK_USER_POLICY);
-    
-    // Enforce fail-closed check on policy status (Fix VULN-07 & VULN-R5-05)
+
     if (policyDecision.status !== "ALLOW") {
       const blockedIIP = generateIIP(
-        intent,
-        candidate,
-        policyDecision,
-        {
-          success: false,
-          revertReason: `Policy blocked execution: ${policyDecision.reason}`,
-          timestamp: new Date().toISOString()
-        }
+        intent, candidate, policyDecision,
+        { success: false, revertReason: `Policy blocked: ${policyDecision.reason}`, timestamp: new Date().toISOString() }
       );
-
-      const proposalId = storeProposal(blockedIIP);
+      const proposalId = storeProposal(blockedIIP, session.userId);
 
       return {
         success: false,
@@ -150,9 +133,7 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
         step: "POLICY_EVALUATION",
         proposalId,
         summary: {
-          action: intent.action,
-          asset: intent.asset,
-          amount: intent.amount,
+          action: intent.action, asset: intent.asset, amount: intent.amount,
           recipientAlias: intent.recipientAlias,
           recipientAddress: policyDecision.resolvedAddress || candidate.to,
           gasEstimated: simulation.gasEstimated?.toString(),
@@ -165,8 +146,8 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
     currentStep = "IIP_GENERATION";
     const iip = generateIIP(intent, candidate, policyDecision, simulation);
 
-    // Step 7: Store Server-Owned Proposal (VULN-R5-02)
-    const proposalId = storeProposal(iip);
+    // Step 7: Store Owner-Bound Proposal (R5D)
+    const proposalId = storeProposal(iip, session.userId);
 
     if (iip.finalDecision !== "ALLOW_FOR_AUTHORIZATION") {
       return {
@@ -175,11 +156,8 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
         step: simulation.success ? "IIP_GENERATION" : "SIMULATION",
         proposalId,
         summary: {
-          action: intent.action,
-          asset: intent.asset,
-          amount: intent.amount,
-          recipientAlias: intent.recipientAlias,
-          recipientAddress: candidate.to,
+          action: intent.action, asset: intent.asset, amount: intent.amount,
+          recipientAlias: intent.recipientAlias, recipientAddress: candidate.to,
           gasEstimated: simulation.gasEstimated?.toString(),
           proofDigest: iip.proofDigest
         }
@@ -190,11 +168,8 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
       success: true,
       proposalId,
       summary: {
-        action: intent.action,
-        asset: intent.asset,
-        amount: intent.amount,
-        recipientAlias: intent.recipientAlias,
-        recipientAddress: candidate.to,
+        action: intent.action, asset: intent.asset, amount: intent.amount,
+        recipientAlias: intent.recipientAlias, recipientAddress: candidate.to,
         gasEstimated: simulation.gasEstimated?.toString(),
         proofDigest: iip.proofDigest
       }
@@ -210,39 +185,68 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
 }
 
 /**
- * Phase 2: Execution Authorization (R5C — Durable Atomic Idempotency)
- * Requires authenticated session and valid server-stored proposalId.
- * Enforces cryptographic digest verification, atomic SQLite state lock,
- * and terminal status recording before and after on-chain broadcast.
+ * Phase 2: Execution Authorization (R5D — Owner-Bound, Expiry-Checked, Atomic)
+ *
+ * Security gates:
+ * 1. Authenticate request
+ * 2. Retrieve proposal
+ * 3. Verify ownership
+ * 4. Verify expiration
+ * 5. Authorize proposal (PREPARED -> AUTHORIZED)
+ * 6. Verify IIP digest integrity
+ * 7. Acquire atomic execution lock (AUTHORIZED -> SUBMITTING)
+ * 8. Validate execution authorization
+ * 9. Execute and record terminal state
  */
 export async function authorizeAndExecute(proposalId: string): Promise<AuthorizeResult> {
-  // Authentication Barrier (VULN-R5-01)
+  // Gate 1: Authentication
   const session = await verifySession();
   if (!session) {
     throw new Error("UNAUTHORIZED_ACCESS: Authentication required to execute transaction proposal.");
   }
 
-  // Server-Owned Proposal Retrieval (VULN-R5-02)
-  const iip = retrieveProposal(proposalId);
-  if (!iip) {
+  // Gate 2: Proposal Retrieval
+  const proposal = retrieveProposal(proposalId);
+  if (!proposal) {
     throw new Error("UNKNOWN_PROPOSAL: Transaction proposal not found or expired.");
   }
 
-  // Security Gate 1 (Tampering): Verify Keccak-256 digest
+  // Gate 3: Ownership Verification
+  if (proposal.ownerId !== session.userId) {
+    throw new Error("OWNERSHIP_VIOLATION: You are not the owner of this proposal.");
+  }
+
+  // Gate 4: Expiration Check
+  if (isProposalExpired(proposalId)) {
+    throw new Error("PROPOSAL_EXPIRED: This proposal has expired and can no longer be executed.");
+  }
+
+  // Gate 5: Authorization Transition (PREPARED -> AUTHORIZED)
+  // This is a no-op if already AUTHORIZED (lock will handle it)
+  const currentStatus = getProposalStatus(proposalId);
+  if (currentStatus === 'PREPARED') {
+    const authorized = authorizeProposal(proposalId, session.userId);
+    if (!authorized) {
+      throw new Error("AUTHORIZATION_FAILED: Could not authorize proposal. It may have expired or been modified.");
+    }
+  } else if (currentStatus !== 'AUTHORIZED') {
+    // Already past AUTHORIZED state
+    throw new Error("DUPLICATE_EXECUTION: Transaction is already processing or executed.");
+  }
+
+  // Gate 6: IIP Digest Integrity
+  const iip = proposal.iipData;
   if (!verifyIIPDigest(iip)) {
     throw new Error("TAMPERED_PAYLOAD: The transaction payload has been illegally modified.");
   }
 
-  // Security Gate 2 (Atomic Idempotency — R5C): Durable SQLite state lock
-  // SQL: UPDATE proposals SET status = 'SUBMITTING' WHERE id = ? AND status = 'PREPARED'
-  // Returns true only if exactly one row transitioned PREPARED -> SUBMITTING.
-  // Concurrent or duplicate calls see changes === 0 and are rejected.
-  const lockAcquired = lockProposalForExecution(proposalId);
+  // Gate 7: Atomic Execution Lock (AUTHORIZED -> SUBMITTING)
+  const lockAcquired = lockProposalForExecution(proposalId, session.userId);
   if (!lockAcquired) {
     throw new Error("DUPLICATE_EXECUTION: Transaction is already processing or executed.");
   }
 
-  // Security Gate 3 (Authorization Gate): Ensure proof authorized execution
+  // Gate 8: Execution Authorization Check
   if (iip.finalDecision !== "ALLOW_FOR_AUTHORIZATION") {
     updateProposalStatus(proposalId, "FAILED");
     throw new Error("UNAUTHORIZED_EXECUTION: Intent Integrity Proof does not permit execution.");
@@ -256,22 +260,35 @@ export async function authorizeAndExecute(proposalId: string): Promise<Authorize
     throw new Error("MISSING_CREDENTIALS: Real execution requires configured private key and RPC URL.");
   }
 
-  const executionResult = await executeTransaction(iip, privateKey, rpcUrl);
+  // Execute with crash-safe state tracking
+  try {
+    const executionResult = await executeTransaction(iip, privateKey, rpcUrl);
 
-  // Record terminal execution state in durable store
-  if (executionResult.success) {
-    updateProposalStatus(proposalId, "CONFIRMED");
-  } else {
-    const terminalStatus = executionResult.receiptStatus === "reverted" ? "REVERTED" : "FAILED";
-    updateProposalStatus(proposalId, terminalStatus);
+    // Record tx hash if available (crash recovery evidence)
+    if (executionResult.transactionHash) {
+      recordTxHash(proposalId, executionResult.transactionHash);
+    }
+
+    // Record terminal state
+    if (executionResult.success) {
+      updateProposalStatus(proposalId, "CONFIRMED");
+    } else {
+      const terminalStatus = executionResult.receiptStatus === "reverted" ? "REVERTED" : "FAILED";
+      updateProposalStatus(proposalId, terminalStatus);
+    }
+
+    return {
+      success: executionResult.success,
+      proposalId,
+      executionResult
+    };
+  } catch (error) {
+    // Execution threw — proposal remains SUBMITTING for reconciliation
+    // Do NOT automatically reset to PREPARED (would enable duplicate broadcast)
+    return {
+      success: false,
+      proposalId,
+      error: `EXECUTION_UNCERTAIN: ${(error as Error).message}. Proposal locked for reconciliation.`
+    };
   }
-
-  return {
-    success: executionResult.success,
-    proposalId,
-    executionResult
-  };
 }
-
-
-
