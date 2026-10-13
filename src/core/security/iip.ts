@@ -22,17 +22,22 @@ export function computeIIPDigest(
   policyDecision: PolicyDecision
 ): `0x${string}` {
   const isAddr = isValidEvmAddress(candidate.to);
+  const dataPayload: `0x${string}` = candidate.data
+    ? (candidate.data.startsWith('0x') ? (candidate.data as `0x${string}`) : (`0x${candidate.data}` as `0x${string}`))
+    : '0x';
+
   if (isAddr) {
     return keccak256(
       encodePacked(
-        ['address', 'uint256', 'uint256', 'string', 'string', 'string'],
+        ['address', 'uint256', 'uint256', 'string', 'string', 'string', 'bytes'],
         [
           candidate.to as Address,
           candidate.value,
           BigInt(candidate.chainId),
           intent.action,
           intent.asset,
-          policyDecision.status
+          policyDecision.status,
+          dataPayload
         ]
       )
     );
@@ -40,14 +45,15 @@ export function computeIIPDigest(
 
   return keccak256(
     encodePacked(
-      ['string', 'uint256', 'uint256', 'string', 'string', 'string'],
+      ['string', 'uint256', 'uint256', 'string', 'string', 'string', 'bytes'],
       [
         candidate.to,
         candidate.value,
         BigInt(candidate.chainId),
         intent.action,
         intent.asset,
-        policyDecision.status
+        policyDecision.status,
+        dataPayload
       ]
     )
   );

@@ -1,8 +1,8 @@
 "use server";
 
 import { parseIntent } from "@/core/ai/intent-parser";
-import { evaluatePolicy } from "@/core/policy/engine";
-import { buildTransaction } from "@/core/transaction/builder";
+import { evaluatePolicy, PolicyDecision } from "@/core/policy/engine";
+import { buildTransaction, TransactionCandidate } from "@/core/transaction/builder";
 import { simulateTransaction } from "@/core/security/simulator";
 import { generateIIP, verifyIIPDigest } from "@/core/security/iip";
 import { executeTransaction, ExecutionResult } from "@/core/execution/controller";
@@ -48,10 +48,15 @@ export type AuthorizeResult = {
 };
 
 /**
- * Phase 1: Intent Preparation & Proposal Creation (Server-Owned)
- * Authenticates session, parses intent, evaluates policy, builds candidate,
- * dry-runs simulation, generates IIP, and stores proposal on server.
- * Returns ONLY proposalId and sanitized summary. DOES NOT LEAK RAW IIP.
+ * Phase 1: Intent Preparation & Proposal Creation (Server-Owned, R5B Pipeline)
+ * Reordered execution:
+ * 1. Parse Intent (AI NLP)
+ * 2. Resolve Recipient Alias
+ * 3. Build Transaction Candidate
+ * 4. Dry-run Simulation via RPC
+ * 5. Deterministic Policy Evaluation against Candidate (Calldata Inspection)
+ * 6. Intent Integrity Proof (IIP) Generation with Calldata Hash
+ * 7. Store Server-Owned Proposal and Return Sanitized Summary
  */
 export async function prepareTransactionIntent(command: string): Promise<PrepareResult> {
   // Authentication Barrier (VULN-R5-01)
@@ -63,22 +68,72 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
   let currentStep = "INTENT_PARSING";
   
   try {
-    // Step 1: Parse (M2)
+    // Step 1: Parse Intent (M2)
     const intent = await parseIntent(command);
     
-    // Step 2: Policy (M3)
+    // Step 2: Resolve Recipient
+    currentStep = "RECIPIENT_RESOLUTION";
+    const resolvedAddress = MOCK_USER_POLICY.trustedContacts[intent.recipientAlias];
+    if (!resolvedAddress) {
+      const blockedDecision: PolicyDecision = {
+        status: "BLOCKED",
+        reason: `Unknown recipient alias: ${intent.recipientAlias}`
+      };
+      const fallbackCandidate: TransactionCandidate = {
+        to: "0x0000000000000000000000000000000000000000",
+        value: BigInt(0),
+        chainId: 11155111
+      };
+      const blockedIIP = generateIIP(
+        intent,
+        fallbackCandidate,
+        blockedDecision,
+        {
+          success: false,
+          revertReason: `Policy blocked execution: ${blockedDecision.reason}`,
+          timestamp: new Date().toISOString()
+        }
+      );
+
+      const proposalId = storeProposal(blockedIIP);
+
+      return {
+        success: false,
+        error: `Policy Blocked: ${blockedDecision.reason}`,
+        step: "POLICY_EVALUATION",
+        proposalId,
+        summary: {
+          action: intent.action,
+          asset: intent.asset,
+          amount: intent.amount,
+          recipientAlias: intent.recipientAlias,
+          recipientAddress: "Blocked",
+          proofDigest: blockedIIP.proofDigest
+        }
+      };
+    }
+
+    // Step 3: Build Candidate (M4)
+    currentStep = "TRANSACTION_BUILDING";
+    const candidate = buildTransaction(intent, resolvedAddress);
+
+    // Step 4: Dry-run Simulation (M5)
+    currentStep = "SIMULATION";
+    const rpcUrl = process.env.RPC_URL;
+    if (!rpcUrl) {
+      throw new Error("SIMULATION_UNAVAILABLE: Cannot dry-run transaction without RPC URL.");
+    }
+    const simulation = await simulateTransaction(candidate, rpcUrl);
+
+    // Step 5: Deterministic Policy Evaluation against Candidate (M3 + R5B Calldata Decoding)
     currentStep = "POLICY_EVALUATION";
-    const policyDecision = evaluatePolicy(intent, MOCK_USER_POLICY);
+    const policyDecision = evaluatePolicy(intent, candidate, MOCK_USER_POLICY);
     
-    // Enforce fail-closed check on policy status (Fix VULN-07)
+    // Enforce fail-closed check on policy status (Fix VULN-07 & VULN-R5-05)
     if (policyDecision.status !== "ALLOW") {
       const blockedIIP = generateIIP(
         intent,
-        {
-          to: policyDecision.resolvedAddress || "0x0000000000000000000000000000000000000000",
-          value: BigInt(0),
-          chainId: 11155111
-        },
+        candidate,
         policyDecision,
         {
           success: false,
@@ -99,33 +154,18 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
           asset: intent.asset,
           amount: intent.amount,
           recipientAlias: intent.recipientAlias,
-          recipientAddress: policyDecision.resolvedAddress || "Blocked",
+          recipientAddress: policyDecision.resolvedAddress || candidate.to,
+          gasEstimated: simulation.gasEstimated?.toString(),
           proofDigest: blockedIIP.proofDigest
         }
       };
     }
 
-    if (!policyDecision.resolvedAddress) {
-      throw new Error(`Policy Blocked: ${policyDecision.reason}`);
-    }
-
-    // Step 3: Build (M4)
-    currentStep = "TRANSACTION_BUILDING";
-    const candidate = buildTransaction(intent, policyDecision.resolvedAddress);
-
-    // Step 4: Simulate (M5)
-    currentStep = "SIMULATION";
-    const rpcUrl = process.env.RPC_URL;
-    if (!rpcUrl) {
-      throw new Error("SIMULATION_UNAVAILABLE: Cannot dry-run transaction without RPC URL.");
-    }
-    const simulation = await simulateTransaction(candidate, rpcUrl);
-
-    // Step 5: IIP (M6)
+    // Step 6: Generate IIP (M6 + Calldata Hashing)
     currentStep = "IIP_GENERATION";
     const iip = generateIIP(intent, candidate, policyDecision, simulation);
 
-    // Store server-owned proposal (VULN-R5-02)
+    // Step 7: Store Server-Owned Proposal (VULN-R5-02)
     const proposalId = storeProposal(iip);
 
     if (iip.finalDecision !== "ALLOW_FOR_AUTHORIZATION") {

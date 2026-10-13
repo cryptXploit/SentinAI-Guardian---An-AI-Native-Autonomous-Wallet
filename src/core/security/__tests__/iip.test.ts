@@ -125,5 +125,30 @@ describe('Intent Integrity Proof (IIP) Generator & Verifier', () => {
 
       expect(verifyIIPDigest(tamperedIIP)).toBe(false);
     });
+
+    it('5. Tamper Calldata: should detect tampering when candidate.data is mutated', () => {
+      const candidateWithData: TransactionCandidate = {
+        to: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+        value: BigInt(0),
+        data: "0xa9059cbb000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa960450000000000000000000000000000000000000000000000000000000002faf080",
+        chainId: 11155111
+      };
+      const policyDecision: PolicyDecision = { status: "ALLOW", reason: "Ok" };
+      const simulation: SimulationResult = { success: true, timestamp: "now", gasEstimated: BigInt(21000) };
+
+      const iip = generateIIP(dummyIntent, candidateWithData, policyDecision, simulation);
+      expect(verifyIIPDigest(iip)).toBe(true);
+
+      // Mutate calldata payload to malicious approve call
+      const tamperedIIP = {
+        ...iip,
+        candidate: {
+          ...iip.candidate,
+          data: "0x095ea7b30000000000000000000000001111111254fb6c44bac0bed2854e76f90643097dffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      };
+
+      expect(verifyIIPDigest(tamperedIIP)).toBe(false);
+    });
   });
 });

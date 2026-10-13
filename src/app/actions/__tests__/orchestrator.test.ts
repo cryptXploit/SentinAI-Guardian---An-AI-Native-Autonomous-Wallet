@@ -126,4 +126,33 @@ describe('Orchestrator Two-Phase Authenticated Actions (R5A)', () => {
       .rejects
       .toThrow("DUPLICATE_EXECUTION");
   });
+
+  it('Negative Test 7: authorizeAndExecute should reject tampered calldata in proposal (R5B calldata integrity)', async () => {
+    const prepared = await prepareTransactionIntent("Send 0.05 ETH to alice");
+    const stored = retrieveProposal(prepared.proposalId!);
+    expect(stored).toBeDefined();
+
+    // Tamper with candidate calldata
+    stored!.candidate.data = "0xdeadbeef";
+
+    await expect(authorizeAndExecute(prepared.proposalId!))
+      .rejects
+      .toThrow("TAMPERED_PAYLOAD");
+  });
+
+  it('Negative Test 8: prepareTransactionIntent should fail-closed on unknown recipient alias', async () => {
+    const { parseIntent } = await import('@/core/ai/intent-parser');
+    (parseIntent as any).mockResolvedValueOnce({
+      action: "TRANSFER",
+      asset: "ETH",
+      amount: "0.05",
+      recipientAlias: "unknown_person"
+    });
+
+    const result = await prepareTransactionIntent("Send 0.05 ETH to unknown_person");
+    expect(result.success).toBe(false);
+    expect(result.step).toBe("POLICY_EVALUATION");
+    expect(result.error).toContain("Unknown recipient alias");
+    expect(result.proposalId).toBeDefined();
+  });
 });
