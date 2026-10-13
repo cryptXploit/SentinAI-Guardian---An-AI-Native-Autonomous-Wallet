@@ -18,6 +18,7 @@ vi.mock('viem/accounts', () => ({
 
 describe('Execution Controller', () => {
   const dummyIIP: IntentIntegrityProof = {
+    proofDigest: "0x1234",
     proofId: "1234",
     intent: { action: "TRANSFER", asset: "ETH", amount: "0.1", recipientAlias: "alice" },
     candidate: { to: "0x123", value: BigInt("100000"), chainId: 11155111 },

@@ -22,3 +22,5 @@ export const UserPolicySchema = z.object({
 export type IntentAction = z.infer<typeof IntentActionSchema>;
 export type ParsedIntent = z.infer<typeof ParsedIntentSchema>;
 export type UserPolicy = z.infer<typeof UserPolicySchema>;
+
+export type { IntentIntegrityProof } from '../security/iip';
