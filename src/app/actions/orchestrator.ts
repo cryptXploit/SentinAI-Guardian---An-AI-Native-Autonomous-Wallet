@@ -4,8 +4,8 @@ import { parseIntent } from "@/core/ai/intent-parser";
 import { evaluatePolicy } from "@/core/policy/engine";
 import { buildTransaction } from "@/core/transaction/builder";
 import { simulateTransaction } from "@/core/security/simulator";
-import { generateIIP } from "@/core/security/iip";
-import { executeTransaction } from "@/core/execution/controller";
+import { generateIIP, verifyIIPDigest, IntentIntegrityProof } from "@/core/security/iip";
+import { executeTransaction, ExecutionResult } from "@/core/execution/controller";
 import { UserPolicy } from "@/core/domain/schemas";
 
 const MOCK_USER_POLICY: UserPolicy = {
@@ -17,7 +17,29 @@ const MOCK_USER_POLICY: UserPolicy = {
   }
 };
 
-export async function processAgentCommand(command: string) {
+// Module-level idempotency store (Fix VULN-06)
+const executedDigests = new Set<string>();
+
+export type PrepareResult = {
+  success: boolean;
+  iip?: IntentIntegrityProof;
+  error?: string;
+  step?: string;
+};
+
+export type AuthorizeResult = {
+  success: boolean;
+  iip?: IntentIntegrityProof;
+  executionResult?: ExecutionResult;
+  error?: string;
+};
+
+/**
+ * Phase 1: Intent Preparation
+ * Parses intent, evaluates policy, builds candidate, simulates execution, and produces IIP.
+ * Strictly DOES NOT execute transaction.
+ */
+export async function prepareTransactionIntent(command: string): Promise<PrepareResult> {
   let currentStep = "INTENT_PARSING";
   
   try {
@@ -28,7 +50,7 @@ export async function processAgentCommand(command: string) {
     currentStep = "POLICY_EVALUATION";
     const policyDecision = evaluatePolicy(intent, MOCK_USER_POLICY);
     
-    // Explicitly enforce fail-closed check on policy status (Fix VULN-07)
+    // Enforce fail-closed check on policy status (Fix VULN-07)
     if (policyDecision.status !== "ALLOW") {
       const blockedIIP = generateIIP(
         intent,
@@ -49,11 +71,7 @@ export async function processAgentCommand(command: string) {
         success: false,
         error: `Policy Blocked: ${policyDecision.reason}`,
         step: "POLICY_EVALUATION",
-        iip: blockedIIP,
-        executionResult: {
-          success: false,
-          error: `Policy Blocked: ${policyDecision.reason}`
-        }
+        iip: blockedIIP
       };
     }
 
@@ -77,32 +95,19 @@ export async function processAgentCommand(command: string) {
     currentStep = "IIP_GENERATION";
     const iip = generateIIP(intent, candidate, policyDecision, simulation);
 
-    // Step 6: Execute (M7)
-    currentStep = "EXECUTION";
-    let executionResult = null;
-    if (iip.finalDecision === "ALLOW_FOR_AUTHORIZATION") {
-      const privateKey = process.env.AGENT_PRIVATE_KEY;
-      if (!privateKey) {
-        throw new Error("MISSING_CREDENTIALS: Real execution requires configured private key and RPC URL.");
-      }
-      executionResult = await executeTransaction(iip, privateKey, rpcUrl);
-      return {
-        success: executionResult.success,
-        iip,
-        executionResult
-      };
-    } else {
+    if (iip.finalDecision !== "ALLOW_FOR_AUTHORIZATION") {
       return {
         success: false,
         error: simulation.revertReason || "Blocked by Intent Integrity Proof",
         step: simulation.success ? "IIP_GENERATION" : "SIMULATION",
-        iip,
-        executionResult: {
-          success: false,
-          error: simulation.revertReason || "Blocked by Intent Integrity Proof",
-        }
+        iip
       };
     }
+
+    return {
+      success: true,
+      iip
+    };
 
   } catch (error) {
     return {
@@ -111,4 +116,58 @@ export async function processAgentCommand(command: string) {
       step: currentStep
     };
   }
+}
+
+/**
+ * Phase 2: Execution Authorization
+ * Enforces cryptographic digest verification and idempotency locks before on-chain broadcast.
+ */
+export async function authorizeAndExecute(iip: IntentIntegrityProof): Promise<AuthorizeResult> {
+  try {
+    // Security Gate 1 (Tampering): Verify Keccak-256 digest
+    if (!verifyIIPDigest(iip)) {
+      throw new Error("TAMPERED_PAYLOAD: The transaction payload has been illegally modified.");
+    }
+
+    // Security Gate 2 (Idempotency): Prevent duplicate replay attacks
+    if (executedDigests.has(iip.proofDigest)) {
+      throw new Error("DUPLICATE_EXECUTION: This transaction digest has already been executed.");
+    }
+
+    // Security Gate 3 (Authorization Gate): Ensure proof authorized execution
+    if (iip.finalDecision !== "ALLOW_FOR_AUTHORIZATION") {
+      throw new Error("UNAUTHORIZED_EXECUTION: Intent Integrity Proof does not permit execution.");
+    }
+
+    const privateKey = process.env.AGENT_PRIVATE_KEY;
+    const rpcUrl = process.env.RPC_URL;
+
+    if (!privateKey || !rpcUrl) {
+      throw new Error("MISSING_CREDENTIALS: Real execution requires configured private key and RPC URL.");
+    }
+
+    // Lock digest immediately to prevent race conditions
+    executedDigests.add(iip.proofDigest);
+
+    const executionResult = await executeTransaction(iip, privateKey, rpcUrl);
+
+    return {
+      success: executionResult.success,
+      iip,
+      executionResult
+    };
+  } catch (error) {
+    return {
+      success: false,
+      iip,
+      error: (error as Error).message
+    };
+  }
+}
+
+/**
+ * Test helper for resetting the module-level idempotency cache in unit tests
+ */
+export async function _resetExecutedDigestsForTesting() {
+  executedDigests.clear();
 }
