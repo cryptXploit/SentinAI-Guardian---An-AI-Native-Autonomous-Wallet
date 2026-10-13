@@ -52,7 +52,7 @@ export function validateRuntimeConfig(): ConfigValidationResult {
 
   const summary: RuntimeConfigSummary = {
     hasGeminiKey: Boolean(geminiKey),
-    geminiModel: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+    geminiModel: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
     hasRpcUrl: Boolean(rpcUrl),
     hasPrivateKey: Boolean(privateKey && privateKey.startsWith('0x') && privateKey.length === 66),
     hasOperatorPassword: Boolean(operatorPassword),

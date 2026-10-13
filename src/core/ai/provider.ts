@@ -77,9 +77,12 @@ export function classifyAiError(
     lower.includes('resource_exhausted') ||
     lower.includes('429') ||
     lower.includes('quota') ||
-    lower.includes('rate limit')
+    lower.includes('rate limit') ||
+    lower.includes('503') ||
+    lower.includes('high demand') ||
+    lower.includes('unavailable')
   ) {
-    return { classification: 'QUOTA_EXCEEDED', message: 'Gemini API quota or rate limit exceeded.' };
+    return { classification: 'QUOTA_EXCEEDED', message: 'Gemini API quota exceeded or temporarily unavailable due to high demand.' };
   }
   if (
     lower.includes('fetch failed') ||
@@ -99,7 +102,7 @@ export class GeminiIntentProvider implements IntentAIProvider {
 
   constructor(
     private readonly apiKey: string = process.env.GEMINI_API_KEY || '',
-    modelName: string = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
+    modelName: string = process.env.GEMINI_MODEL || 'gemini-3.8-flash'
   ) {
     if (!this.apiKey) {
       throw new Error('CONFIG_ERROR: GEMINI_API_KEY is not configured in environment.');

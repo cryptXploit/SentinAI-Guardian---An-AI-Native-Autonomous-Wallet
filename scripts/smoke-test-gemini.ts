@@ -32,7 +32,7 @@ async function main() {
 
   // Sanitized display of presence only
   console.log(`[AUTH] Key configured: YES (${apiKey.length} characters)`);
-  const modelName = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
   console.log(`[CONFIG] Provider: Google Gemini (@google/genai)`);
   console.log(`[CONFIG] Model:    ${modelName}`);
   console.log(`[TIMEOUT] Strict: 10,000ms`);

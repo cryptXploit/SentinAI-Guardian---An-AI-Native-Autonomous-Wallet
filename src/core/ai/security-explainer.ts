@@ -32,7 +32,7 @@ export async function explainSecurityFindings(params: {
   apiKey?: string;
   modelName?: string;
 }): Promise<SecurityExplanationResult> {
-  const { analysis, apiKey = process.env.GEMINI_API_KEY, modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash' } = params;
+  const { analysis, apiKey = process.env.GEMINI_API_KEY, modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash' } = params;
 
   // If live Gemini is configured, attempt AI explanation with 5s timeout
   if (apiKey) {

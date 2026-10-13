@@ -330,7 +330,7 @@ export default function IntentComparisonPanel({
             </div>
             <span className="px-2 py-0.5 rounded text-[10px] font-mono text-gray-400 bg-[#0B0F17] border border-border">
               {explanation.source === "GEMINI_AI"
-                ? `Google Gemini (${explanation.modelUsed || "gemini-2.5-flash"}) · ${explanation.latencyMs}ms`
+                ? `Google Gemini (${explanation.modelUsed || "gemini-3.8-flash"}) · ${explanation.latencyMs}ms`
                 : "Deterministic Policy Engine"}
             </span>
           </div>

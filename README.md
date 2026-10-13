@@ -10,7 +10,7 @@ SentinAI Guardian bridges Large Language Models with EVM blockchains securely. I
 
 - **Intent-to-Transaction Semantic Verification:** Independently decodes EVM calldata (`candidate.data`) using Viem ABI parsers and checks 10 distinct security vectors (recipient mismatch, token contract mismatch, transfer amount mismatch, approval amount mismatch, unlimited approval requests, spender mismatch, transaction method mismatch, unexpected native value, unauthorized network, and unsupported calldata).
 - **Approval Exposure Intelligence:** Analyzes ERC-20 allowances against configured spending limits and previous permissions, distinguishing between a spending permission and an actual token transfer.
-- **Modern Google Gemini Integration:** Powered by the official `@google/genai` SDK (`gemini-2.5-flash` or `gemini-1.5-flash`), featuring true `AbortController` cancellation, a 15-second ceiling, input sanitization, and structured JSON schema enforcement.
+- **Modern Google Gemini Integration:** Powered by the official `@google/genai` SDK (`gemini-3.8-flash`), featuring true `AbortController` cancellation, a 10-second ceiling, input sanitization, and structured JSON schema enforcement.
 - **Grounded Security Explanations:** Gemini provides plain-language educational explanations strictly grounded in deterministic findings. Crucially, the AI has **zero authority** to approve, unblock, or override security policy.
 - **Two-Phase Human-in-the-Loop Authorization:** All state-changing transactions require explicit operator confirmation over a tamper-evident Keccak-256 Intent Integrity Proof (IIP) digest before signing.
 - **Controlled Threat Scenario Fixtures:** Includes 15 deterministic security fixtures in `fixtures/security/` allowing judges and developers to test threat detections (phishing approvals, drainer spenders, token spoofing) with instant visual evidence.
@@ -69,7 +69,7 @@ AGENT_WALLET_ADDRESS="0x..."
 # AI Configuration (Optional: defaults to 'mock' if GEMINI_API_KEY is not set)
 AI_PROVIDER="gemini" # or "mock"
 GEMINI_API_KEY="your-gemini-api-key"
-GEMINI_MODEL="gemini-2.5-flash"
+GEMINI_MODEL="gemini-3.8-flash"
 ```
 
 > **SECURITY NOTICE:** Never use a private key associated with real funds on Ethereum mainnet. This system strictly targets Ethereum Sepolia Testnet (`chainId: 11155111`).

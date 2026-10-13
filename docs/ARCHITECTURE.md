@@ -110,7 +110,7 @@ The core innovation of Milestone R7. Even though the application constructed the
 
 ### D. AI Provider Abstraction (`src/core/ai/provider.ts`)
 - Migrated to the modern `@google/genai` SDK (version 2.x).
-- Uses `gemini-2.5-flash` with true `AbortController` cancellation, 15-second timeout, 500-char length guard, and structured JSON output.
+- Uses `gemini-3.8-flash` with true `AbortController` cancellation, 10-second timeout, 500-char length guard, and structured JSON output.
 - Deterministic `MockIntentProvider` for offline and testing environments.
 - Zero silent fallback: failures throw explicit errors.
 
