@@ -187,14 +187,31 @@ export function classifyAiError(
 }
 
 let _lastParsedProvenance: 'LIVE_AI' | 'DETERMINISTIC_FALLBACK' = 'DETERMINISTIC_FALLBACK';
+let _lastActiveProviderName: 'gemini' | 'groq' | 'mock' = 'mock';
+let _lastActiveModelName: string = 'deterministic-fallback';
 
 export function getLastParsedProvenance(): 'LIVE_AI' | 'DETERMINISTIC_FALLBACK' {
   return _lastParsedProvenance;
 }
 
+export function getLastActiveProviderName(): 'gemini' | 'groq' | 'mock' {
+  return _lastActiveProviderName;
+}
+
+export function getLastActiveModelName(): string {
+  return _lastActiveModelName;
+}
+
 export function _setLastParsedProvenanceForTesting(provenance: 'LIVE_AI' | 'DETERMINISTIC_FALLBACK'): void {
   _lastParsedProvenance = provenance;
 }
+
+export const SUPPORTED_GROQ_MODELS = [
+  'openai/gpt-oss-120b',
+  'openai/gpt-oss-20b',
+  'qwen/qwen3.8-27b',
+  'allam-2-7b',
+] as const;
 
 export class GeminiIntentProvider implements IntentAIProvider {
   readonly name = 'gemini';
@@ -275,8 +292,11 @@ export class GeminiIntentProvider implements IntentAIProvider {
       const responseText = response.text || '';
       const rawJson = JSON.parse(responseText);
 
+      const parsed = ParsedIntentSchema.parse(rawJson);
       _lastParsedProvenance = 'LIVE_AI';
-      return ParsedIntentSchema.parse(rawJson);
+      _lastActiveProviderName = 'gemini';
+      _lastActiveModelName = this.modelName;
+      return parsed;
     } catch (error: unknown) {
       this._lastLatencyMs = Date.now() - startTime;
       const { classification, message } = classifyAiError(error, abortController.signal.aborted);
@@ -285,6 +305,244 @@ export class GeminiIntentProvider implements IntentAIProvider {
       clearTimeout(timer);
     }
   }
+}
+
+export class GroqIntentProvider implements IntentAIProvider {
+  readonly name = 'groq';
+  readonly modelName: string;
+  private _lastLatencyMs?: number;
+
+  constructor(
+    private readonly apiKey: string = process.env.GROQ_API_KEY || '',
+    modelName: string = process.env.GROQ_MODEL || 'openai/gpt-oss-120b'
+  ) {
+    if (!this.apiKey) {
+      throw new Error('CONFIG_ERROR: GROQ_API_KEY is not configured in environment.');
+    }
+    this.modelName = modelName;
+  }
+
+  get lastLatencyMs(): number | undefined {
+    return this._lastLatencyMs;
+  }
+
+  private async callGroqEndpoint(
+    sanitizedCommand: string,
+    targetModel: string,
+    signal: AbortSignal
+  ): Promise<Response> {
+    return fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: targetModel,
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: AI_SYSTEM_PROMPT },
+          { role: 'user', content: sanitizedCommand },
+        ],
+      }),
+      signal,
+    });
+  }
+
+  async parseIntent(command: string): Promise<ParsedIntent> {
+    if (!command || typeof command !== 'string') {
+      throw new Error('INVALID_INPUT: Command must be a non-empty string.');
+    }
+
+    if (command.length > MAX_COMMAND_LENGTH) {
+      throw new Error(`INPUT_TOO_LONG: Command exceeds maximum length of ${MAX_COMMAND_LENGTH} characters.`);
+    }
+
+    const sanitizedCommand = command
+      .replace(/<\/?script[^>]*>/gi, '')
+      .replace(/<\/?iframe[^>]*>/gi, '')
+      .replace(/system\s*:\s*/gi, '')
+      .replace(/assistant\s*:\s*/gi, '')
+      .trim();
+
+    const startTime = Date.now();
+    const abortController = new AbortController();
+    const timer = setTimeout(() => abortController.abort(), 10_000);
+
+    try {
+      let usedModel = this.modelName;
+      let response = await this.callGroqEndpoint(sanitizedCommand, usedModel, abortController.signal);
+
+      // Automatic model-tier failover on Groq: if primary model is rate-limited/unavailable, try openai/gpt-oss-20b then qwen/qwen3.8-27b
+      if (
+        !response.ok &&
+        (response.status === 429 || response.status === 503 || response.status === 404) &&
+        !process.env.GROQ_MODEL
+      ) {
+        const fallbackModels = ['openai/gpt-oss-20b', 'qwen/qwen3.8-27b'].filter((m) => m !== this.modelName);
+        for (const fallbackModel of fallbackModels) {
+          response = await this.callGroqEndpoint(sanitizedCommand, fallbackModel, abortController.signal);
+          if (response.ok) {
+            usedModel = fallbackModel;
+            break;
+          }
+        }
+      }
+
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => '');
+        const statusErr = new Error(`Groq API HTTP ${response.status}: ${errBody || response.statusText}`) as Error & { status?: number };
+        statusErr.status = response.status;
+        throw statusErr;
+      }
+
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+
+      this._lastLatencyMs = Date.now() - startTime;
+      const responseText = data?.choices?.[0]?.message?.content || '';
+      const rawJson = JSON.parse(responseText);
+
+      const parsed = ParsedIntentSchema.parse(rawJson);
+
+      // Defense-in-depth: never allow a contradictory/negated command to produce a state-changing intent
+      if (
+        (parsed.action === 'TRANSFER' || parsed.action === 'APPROVE' || parsed.action === 'SWAP') &&
+        (isTransactionNegationOrCancellation(command) || normalizeBengaliInput(command).isNegated)
+      ) {
+        _lastParsedProvenance = 'LIVE_AI';
+        _lastActiveProviderName = 'groq';
+        _lastActiveModelName = usedModel;
+        return {
+          action: 'UNKNOWN',
+          asset: 'ETH',
+          amount: '0',
+          recipientAlias: '',
+        };
+      }
+
+      _lastParsedProvenance = 'LIVE_AI';
+      _lastActiveProviderName = 'groq';
+      _lastActiveModelName = usedModel;
+      return parsed;
+    } catch (error: unknown) {
+      this._lastLatencyMs = Date.now() - startTime;
+      const { classification, message } = classifyAiError(error, abortController.signal.aborted);
+      throw new Error(`${classification}: ${message}`);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
+/**
+ * Converts Bengali Unicode digits (০-৯) to standard ASCII digits (0-9).
+ */
+export function convertBengaliDigits(str: string): string {
+  return str.replace(/[০-৯]/g, (ch) => String("০১২৩৪৫৬৭৮৯".indexOf(ch)));
+}
+
+/**
+ * Normalizes native Bengali script inputs, mapping Bengali script to phonetic tokens
+ * and detecting Bengali negations or read-only queries.
+ */
+export function normalizeBengaliInput(str: string): {
+  normalized: string;
+  isNegated: boolean;
+  queryAction?: 'QUERY_BALANCE' | 'QUERY_NETWORK';
+  queryAsset?: string;
+} {
+  let text = str.trim();
+
+  // 1. Detect Bengali negations / cancellations
+  const bengaliNegation = /(?:পাঠিও\s*না|পাঠাবেন\s*না|দিও\s*না|দেবেন\s*না|টাকা\s*পাঠিও\s*না|আসলে\s*(?:পাঠিও|দিও)?\s*না|বাতিল\s*কর|পাঠাবে\s*না)/i;
+  if (bengaliNegation.test(text)) {
+    return { normalized: text, isNegated: true };
+  }
+
+  // 2. Detect Bengali queries
+  if (/(?:ব্যালেন্স|ব্যালান্স)\s*(?:দেখাও|কত|চেক|বলো)/i.test(text) || /(?:আমার\s*ওয়ালেট(?:ের)?\s*ব্যালেন্স)/i.test(text)) {
+    let asset = 'ETH';
+    if (/ইউএসডিসি/i.test(text) || /usdc/i.test(text)) asset = 'USDC';
+    else if (/ইউএসডিটি/i.test(text) || /usdt/i.test(text)) asset = 'USDT';
+    else if (/ডাই/i.test(text) || /dai/i.test(text)) asset = 'DAI';
+    return { normalized: text, isNegated: false, queryAction: 'QUERY_BALANCE', queryAsset: asset };
+  }
+
+  if (/(?:বর্তমান\s*নেটওয়ার্ক|নেটওয়ার্ক\s*(?:কী|কি|কোন)|চেইন\s*(?:কী|কি|কোন))/i.test(text)) {
+    return { normalized: text, isNegated: false, queryAction: 'QUERY_NETWORK', queryAsset: 'ETH' };
+  }
+
+  // 3. Normalize Bengali digits
+  text = convertBengaliDigits(text);
+
+  // 4. Normalize tokens
+  text = text
+    .replace(/ইউএসডিসি/gi, 'USDC')
+    .replace(/ইউএসডিটি/gi, 'USDT')
+    .replace(/ডাই/gi, 'DAI')
+    .replace(/(?:ইথ|ইথার|ইথেরিয়াম)/gi, 'ETH');
+
+  // 5. Normalize recipients
+  text = text
+    .replace(/(?:অ্যালিস|এলিস)\s*কে/gi, 'alice ke')
+    .replace(/বব\s*কে/gi, 'bob ke')
+    .replace(/চার্লি\s*কে/gi, 'charlie ke')
+    .replace(/(?:অ্যালিস|এলিস)/gi, 'alice')
+    .replace(/বব/gi, 'bob')
+    .replace(/চার্লি/gi, 'charlie');
+
+  // 6. Normalize verbs
+  text = text
+    .replace(/(?:পাঠাও|পাঠিয়ে\s*দাও|পাঠান)/gi, 'pathao')
+    .replace(/(?:দাও|দিন)/gi, 'dao');
+
+  return { normalized: text, isNegated: false };
+}
+
+/**
+ * Detects context-aware transaction negations, cancellations, and contradictory instructions.
+ * Distinguishes benign conversational filler (e.g. "Do not worry, send 0.05 ETH") from actual transaction negations.
+ */
+export function isTransactionNegationOrCancellation(command: string): boolean {
+  const lower = command.toLowerCase();
+
+  // 1. Explicit cancellation commands
+  if (
+    /\b(?:cancel|abort|halt|stop)\s+(?:the\s+|this\s+|all\s+|my\s+)?(?:transfer|transaction|tx|send|approval|process|everything)?\b/i.test(lower) ||
+    /\b(?:i\s+want\s+to\s+cancel|cancel\s+the\s+transfer|cancel\s+it|cancel\s+everything|simultaneously\s+cancel|and\s+cancel)\b/i.test(lower)
+  ) {
+    return true;
+  }
+
+  // 2. Trailing negation / contradiction (e.g. "Send 0.05 ETH to Alice, but do not send it", "Send 0.1 ETH ... but actually do not send anything")
+  if (
+    /\b(?:but|however|actually|except)\s+(?:actually\s+)?(?:do\s+not|don't|not|never)\s+(?:send|transfer|pay|give|approve|execute|it|anything)\b/i.test(lower) ||
+    /\b(?:do\s+not|don't|never)\s+send\s+(?:it|anything)\b/i.test(lower) ||
+    /\bactually\s+(?:do\s+not|don't|no)\b/i.test(lower)
+  ) {
+    return true;
+  }
+
+  // 3. Direct action negations: "do not send", "don't transfer", "never approve"
+  if (
+    /\b(?:do\s+not|don't|never)\s+(?:send|transfer|pay|give|approve|allow|broadcast|execute|spend)\b/i.test(lower)
+  ) {
+    return true;
+  }
+
+  // 4. Conflicting / disjunctive recipients or operations
+  if (
+    /\b(?:or\s+(?:perhaps|maybe|instead))\b/i.test(lower) ||
+    /\b(?:or\s+maybe\s+transfer|or\s+transfer\s+to|or\s+approve)\b/i.test(lower) ||
+    /\b(?:show\s+my\s+balance\s+but\s+send)\b/i.test(lower)
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 export class MockIntentProvider implements IntentAIProvider {
@@ -297,6 +555,8 @@ export class MockIntentProvider implements IntentAIProvider {
 
   async parseIntent(command: string): Promise<ParsedIntent> {
     const startTime = Date.now();
+    _lastActiveProviderName = 'mock';
+    _lastActiveModelName = 'deterministic-fallback';
 
     if (!command || typeof command !== 'string') {
       throw new Error('INVALID_INPUT: Command must be a non-empty string.');
@@ -306,8 +566,21 @@ export class MockIntentProvider implements IntentAIProvider {
       throw new Error(`INPUT_TOO_LONG: Command exceeds maximum length of ${MAX_COMMAND_LENGTH} characters.`);
     }
 
-    // 1. Sanitization: strip injection tags, system prefixes, and trailing punctuation
-    let sanitized = command
+    // 1. Bengali preprocessing & script normalization (Phase 4)
+    const bg = normalizeBengaliInput(command);
+    if (bg.isNegated) {
+      this._lastLatencyMs = Date.now() - startTime;
+      _lastParsedProvenance = 'DETERMINISTIC_FALLBACK';
+      return { action: 'UNKNOWN', asset: 'ETH', amount: '0', recipientAlias: '' };
+    }
+    if (bg.queryAction) {
+      this._lastLatencyMs = Date.now() - startTime;
+      _lastParsedProvenance = 'DETERMINISTIC_FALLBACK';
+      return { action: bg.queryAction, asset: bg.queryAsset || 'ETH', amount: '0', recipientAlias: '' };
+    }
+
+    // 2. Sanitization: strip injection tags, system prefixes, and trailing punctuation
+    let sanitized = bg.normalized
       .replace(/<\/?script[^>]*>/gi, '')
       .replace(/<\/?iframe[^>]*>/gi, '')
       .replace(/^system\s*:\s*/gi, '')
@@ -317,11 +590,11 @@ export class MockIntentProvider implements IntentAIProvider {
     sanitized = sanitized.replace(/[?.!,;]+$/, '').trim();
 
     // Strip leading conversational/polite filler phrases
-    sanitized = sanitized.replace(/^(please|can you|could you|kindly|i want to|i would like to|help me)\s+/i, '').trim();
+    sanitized = sanitized.replace(/^(?:please|can you|could you|kindly|i want to|i would like to|help me|i need to)\s+/i, '').trim();
 
     const lower = sanitized.toLowerCase();
 
-    // 2. Adversarial & Out-of-Domain Detection
+    // 3. Adversarial & Out-of-Domain Detection
     // Unconditional rejection for jailbreaks, prompt leaks, system overrides, translation attacks, and drain scams
     if (
       lower.startsWith('translate ') ||
@@ -330,17 +603,36 @@ export class MockIntentProvider implements IntentAIProvider {
       lower.includes('disregard previous') ||
       lower.includes('you are now') ||
       lower.includes('system directive') ||
+      lower.includes('system override') ||
       lower.includes('private_key') ||
       lower.includes('seed phrase') ||
       lower.includes('pre-approved by admin') ||
       lower.includes('drain wallet') ||
-      lower.includes('drain ')
+      lower.includes('drain ') ||
+      lower.includes('guardrail') ||
+      lower.includes('developer mode') ||
+      lower.includes('shell command') ||
+      lower.includes('/etc/passwd') ||
+      lower.includes('cat /') ||
+      lower.includes('ignore the policy') ||
+      lower.includes('ignore policy') ||
+      lower.includes('ignore all safety') ||
+      lower.includes('disable verification') ||
+      lower.includes('disable security')
     ) {
       this._lastLatencyMs = Date.now() - startTime;
+      _lastParsedProvenance = 'DETERMINISTIC_FALLBACK';
       return { action: 'UNKNOWN', asset: 'ETH', amount: '0', recipientAlias: '' };
     }
 
-    // 3. Network Queries
+    // 4. Transaction Negation & Cancellation Detection (Context-Aware)
+    if (isTransactionNegationOrCancellation(command)) {
+      this._lastLatencyMs = Date.now() - startTime;
+      _lastParsedProvenance = 'DETERMINISTIC_FALLBACK';
+      return { action: 'UNKNOWN', asset: 'ETH', amount: '0', recipientAlias: '' };
+    }
+
+    // 5. Network Queries
     if (
       lower === 'network' ||
       lower.includes('which chain') ||
@@ -350,6 +642,7 @@ export class MockIntentProvider implements IntentAIProvider {
       lower.includes('which network')
     ) {
       this._lastLatencyMs = Date.now() - startTime;
+      _lastParsedProvenance = 'DETERMINISTIC_FALLBACK';
       return {
         action: 'QUERY_NETWORK',
         asset: 'ETH',
@@ -358,7 +651,7 @@ export class MockIntentProvider implements IntentAIProvider {
       };
     }
 
-    // 4. Balance Queries
+    // 6. Balance Queries
     if (
       (lower.includes('balance') ||
        lower.includes('how much') ||
@@ -378,6 +671,7 @@ export class MockIntentProvider implements IntentAIProvider {
       else if (lower.includes('dai')) asset = 'DAI';
 
       this._lastLatencyMs = Date.now() - startTime;
+      _lastParsedProvenance = 'DETERMINISTIC_FALLBACK';
       return {
         action: 'QUERY_BALANCE',
         asset,
@@ -391,13 +685,17 @@ export class MockIntentProvider implements IntentAIProvider {
       .replace(/\bhalf\s+an?\s+ether\b/gi, '0.5 ETH')
       .replace(/\bhalf\s+an?\s+eth\b/gi, '0.5 ETH')
       .replace(/\ba\s+quarter\s+eth\b/gi, '0.25 ETH')
-      .replace(/\bone\s+eth\b/gi, '1 ETH');
+      .replace(/\bone\s+eth\b/gi, '1 ETH')
+      .replace(/\s+(?:on\s+my\s+behalf|from\s+my\s+account|for\s+me)\b/gi, '');
 
     // Helper to validate and clean numeric amount string
     const isValidAmount = (amt: string): boolean => {
       if (!amt) return false;
-      if (amt.toUpperCase() === 'UNLIMITED' || amt.toUpperCase() === 'MAX') return true;
-      return /^\d+(\.\d+)?$/.test(amt);
+      const upper = amt.toUpperCase();
+      if (upper === 'UNLIMITED' || upper === 'MAX') return true;
+      if (!/^\d+(\.\d+)?$/.test(amt)) return false;
+      const num = parseFloat(amt);
+      return !isNaN(num) && isFinite(num) && num > 0;
     };
 
     // Helper to clean recipient alias/address
@@ -408,7 +706,7 @@ export class MockIntentProvider implements IntentAIProvider {
 
     let result: ParsedIntent;
 
-    // 5. Swap
+    // 7. Swap
     const swapMatch = normalized.match(/swap\s+([0-9.]+)\s*([a-zA-Z]+)?\s+for\s+([a-zA-Z]+)/i);
     if (swapMatch && isValidAmount(swapMatch[1])) {
       result = {
@@ -418,7 +716,7 @@ export class MockIntentProvider implements IntentAIProvider {
         recipientAlias: '',
       };
     } else {
-      // 6. Deposit (Maps to APPROVE for DeFi protocols)
+      // 8. Deposit (Maps to APPROVE for DeFi protocols)
       const depositMatch = normalized.match(/deposit\s+([0-9.]+)\s*([a-zA-Z]+)?\s+into\s+([a-zA-Z0-9_.-]+)/i);
       if (depositMatch && isValidAmount(depositMatch[1])) {
         result = {
@@ -428,8 +726,8 @@ export class MockIntentProvider implements IntentAIProvider {
           recipientAlias: cleanRecipient(depositMatch[3]),
         };
       } else {
-        // 7. State-Changing Transfers
-        // 7a. Max / All amount: send maximum possible ETH to bob
+        // 9. State-Changing Transfers
+        // 9a. Max / All amount: send maximum possible ETH to bob
         const transferMaxMatch = normalized.match(/(?:send|transfer|pay|give)\s+(?:maximum\s+possible|max\s+possible|maximum|max|all)\s+([a-zA-Z]+)?\s+to\s+([a-zA-Z0-9_.-]+)/i);
         if (transferMaxMatch) {
           result = {
@@ -439,7 +737,7 @@ export class MockIntentProvider implements IntentAIProvider {
             recipientAlias: cleanRecipient(transferMaxMatch[2]),
           };
         } else {
-          // 7b. Standard Form: (send|transfer|pay|give) <amount> [dollars of] <asset?> to <recipient>
+          // 9b. Standard Form: (send|transfer|pay|give) <amount> [dollars of] <asset?> to <recipient>
           const transferToMatch = normalized.match(/(?:send|transfer|pay|give)\s+([0-9.]+)\s*(?:dollars\s+of\s+)?([a-zA-Z]+)?\s+to\s+([a-zA-Z0-9_.-]+)/i);
           if (transferToMatch && isValidAmount(transferToMatch[1])) {
             result = {
@@ -449,11 +747,11 @@ export class MockIntentProvider implements IntentAIProvider {
               recipientAlias: cleanRecipient(transferToMatch[3]),
             };
           } else {
-            // 7c. Reverse Form: (send|transfer|pay|give) <recipient> <amount> <asset?>
+            // 9c. Reverse Form: (send|transfer|pay|give) <recipient> <amount> <asset?>
             const transferDirectMatch = normalized.match(/(?:send|transfer|pay|give)\s+([a-zA-Z0-9_.-]+)\s+([0-9.]+)\s*([a-zA-Z]+)?/i);
             if (transferDirectMatch && isValidAmount(transferDirectMatch[2])) {
               const candidateRecipient = cleanRecipient(transferDirectMatch[1]);
-              if (!/^(to|the|my|a|an)$/i.test(candidateRecipient)) {
+              if (!/^(to|the|my|a|an|in|into|for)$/i.test(candidateRecipient)) {
                 result = {
                   action: 'TRANSFER',
                   amount: transferDirectMatch[2],
@@ -464,7 +762,7 @@ export class MockIntentProvider implements IntentAIProvider {
                 result = { action: 'UNKNOWN', asset: 'ETH', amount: '0', recipientAlias: '' };
               }
             } else {
-              // 7d. Banglish / Bengali Form: <recipient> ke <amount> <asset?> (pathao|send koro|dao)
+              // 9d. Banglish / Bengali Form: <recipient> ke <amount> <asset?> (pathao|send koro|dao)
               const banglishMatch = normalized.match(/([a-zA-Z0-9_.-]+)\s*ke\s+([0-9.]+)\s*([a-zA-Z]+)?\s*(?:pathao|send\s*koro|dao)/i);
               if (banglishMatch && isValidAmount(banglishMatch[2])) {
                 result = {
@@ -474,8 +772,8 @@ export class MockIntentProvider implements IntentAIProvider {
                   recipientAlias: cleanRecipient(banglishMatch[1]),
                 };
               } else {
-                // 8. Approvals
-                // 8a. Standard Form: approve <amount|unlimited> <asset?> for <spender>
+                // 10. Approvals
+                // 10a. Standard Form: approve <amount|unlimited> <asset?> for <spender>
                 const approveForMatch = normalized.match(/approve\s+([0-9.]+|unlimited)\s*([a-zA-Z]+)?\s+for\s+([a-zA-Z0-9_.-]+)/i);
                 if (approveForMatch && isValidAmount(approveForMatch[1])) {
                   result = {
@@ -485,8 +783,8 @@ export class MockIntentProvider implements IntentAIProvider {
                     recipientAlias: cleanRecipient(approveForMatch[3]),
                   };
                 } else {
-                  // 8b. Natural Form: approve <spender> to spend <amount|unlimited> <asset?>
-                  const approveToSpendMatch = normalized.match(/approve\s+([a-zA-Z0-9_.-]+)\s+to\s+spend\s+([0-9.]+|unlimited)\s*([a-zA-Z]+)?/i);
+                  // 10b. Natural Form: (approve|allow) <spender> to spend <amount|unlimited> <asset?>
+                  const approveToSpendMatch = normalized.match(/(?:approve|allow)\s+([a-zA-Z0-9_.-]+)\s+to\s+spend\s+([0-9.]+|unlimited)\s*([a-zA-Z]+)?/i);
                   if (approveToSpendMatch && isValidAmount(approveToSpendMatch[2])) {
                     result = {
                       action: 'APPROVE',
@@ -495,7 +793,7 @@ export class MockIntentProvider implements IntentAIProvider {
                       recipientAlias: cleanRecipient(approveToSpendMatch[1]),
                     };
                   } else {
-                    // 8c. Allow Form: allow <spender> <amount|unlimited> <asset?>
+                    // 10c. Allow Form: allow <spender> <amount|unlimited> <asset?>
                     const allowMatch = normalized.match(/allow\s+([a-zA-Z0-9_.-]+)\s+([0-9.]+|unlimited)\s*([a-zA-Z]+)?/i);
                     if (allowMatch && isValidAmount(allowMatch[2])) {
                       result = {
@@ -522,13 +820,18 @@ export class MockIntentProvider implements IntentAIProvider {
     }
 
     this._lastLatencyMs = Date.now() - startTime;
+    _lastParsedProvenance = 'DETERMINISTIC_FALLBACK';
+    _lastActiveProviderName = 'mock';
     return result;
   }
 }
 
 /**
  * Returns the configured intent provider.
- * Selection is explicit: never silently falls back between mock and live.
+ * Priority when AI_PROVIDER is not explicitly locked:
+ * 1. Gemini (if GEMINI_API_KEY is present)
+ * 2. Groq (if GROQ_API_KEY is present)
+ * 3. Deterministic Local Fallback (MockIntentProvider)
  */
 export function getIntentProvider(): IntentAIProvider {
   const explicitProvider = process.env.AI_PROVIDER?.toLowerCase();
@@ -541,9 +844,18 @@ export function getIntentProvider(): IntentAIProvider {
     return new GeminiIntentProvider();
   }
 
-  // If live credentials are available, use Gemini
+  if (explicitProvider === 'groq') {
+    return new GroqIntentProvider();
+  }
+
+  // Primary Live AI: Gemini
   if (process.env.GEMINI_API_KEY) {
     return new GeminiIntentProvider();
+  }
+
+  // Secondary Live AI: Groq (when Gemini API key is not provided)
+  if (process.env.GROQ_API_KEY) {
+    return new GroqIntentProvider();
   }
 
   // When unconfigured or explicitly mock, use deterministic Mock provider

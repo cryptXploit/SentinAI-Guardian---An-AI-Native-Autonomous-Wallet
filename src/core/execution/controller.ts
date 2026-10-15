@@ -96,10 +96,22 @@ export async function broadcastTransaction(
   });
 
   try {
+    // EIP-2780 compatibility floor: Sepolia nodes running Reth v2.7+ estimate 12,000 gas
+    // for self-transfers (from === to). Enforcing a 21,000 gas limit floor when the RPC
+    // estimate is below 21,000 ensures compatibility with any downstream peer enforcing
+    // legacy 21,000 intrinsic gas limits (unused gas is refunded by the EVM).
+    const gasOverride =
+      iip.simulation?.gasEstimated &&
+      iip.simulation.gasEstimated > 0n &&
+      iip.simulation.gasEstimated < 21000n
+        ? 21000n
+        : undefined;
+
     const hash = await walletClient.sendTransaction({
       to: iip.candidate.to as Address,
       value: iip.candidate.value,
-      data: (iip.candidate.data as `0x${string}`) || '0x'
+      data: (iip.candidate.data as `0x${string}`) || '0x',
+      ...(gasOverride ? { gas: gasOverride } : {}),
     });
 
     return { hash, outcome: 'BROADCAST_SUBMITTED' };
@@ -145,6 +157,54 @@ export async function waitForReceipt(
     status: receipt.status,
     blockNumber: receipt.blockNumber,
   };
+}
+
+/**
+ * Read-only on-chain recovery helper (R8.4 Section 3):
+ * Scans recent Sepolia blocks for a transaction sent by `senderAddress` matching
+ * the candidate's `(to, value, data)`. Never signs or broadcasts anything.
+ */
+export async function findMatchingBroadcastTxOnChain(
+  iip: IntentIntegrityProof,
+  senderAddress: string,
+  rpcUrl: string,
+  maxBlocksToScan: number = 5
+): Promise<string | null> {
+  try {
+    const publicClient = createPublicClient({
+      chain: sepolia,
+      transport: http(rpcUrl),
+    });
+
+    const latestBlock = await publicClient.getBlockNumber();
+    const expectedFrom = senderAddress.toLowerCase();
+    const expectedTo = iip.candidate.to.toLowerCase();
+    const expectedValue = BigInt(iip.candidate.value);
+    const expectedData = ((iip.candidate.data as string) || '0x').toLowerCase();
+
+    for (let i = 0; i < maxBlocksToScan; i++) {
+      const bn = latestBlock - BigInt(i);
+      if (bn < 0n) break;
+      const block = await publicClient.getBlock({
+        blockNumber: bn,
+        includeTransactions: true,
+      });
+      for (const tx of block.transactions) {
+        if (
+          typeof tx === 'object' &&
+          tx.from?.toLowerCase() === expectedFrom &&
+          tx.to?.toLowerCase() === expectedTo &&
+          BigInt(tx.value ?? 0n) === expectedValue &&
+          (tx.input || '0x').toLowerCase() === expectedData
+        ) {
+          return tx.hash;
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**

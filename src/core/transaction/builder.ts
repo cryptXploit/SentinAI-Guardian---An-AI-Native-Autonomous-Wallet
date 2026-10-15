@@ -29,7 +29,7 @@ export const SUPPORTED_TOKENS: Record<string, TokenInfo> = {
     symbol: "USDT"
   },
   "DAI": {
-    address: "0x3e622317F8c93f7328350cF0b56318C4cb595a97", // Sepolia test DAI
+    address: "0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357", // Verified Sepolia test DAI (18 decimals)
     decimals: 18,
     symbol: "DAI"
   }

@@ -5,6 +5,21 @@ import { SUPPORTED_TOKENS, TokenInfo } from '../transaction/builder';
 
 export type BalanceStatus = 'AVAILABLE' | 'UNAVAILABLE' | 'NOT_CONFIGURED' | 'UNSUPPORTED';
 
+export type AllowanceReadStatus =
+  | 'REAL_ALLOWANCE'
+  | 'UNKNOWN_ALLOWANCE'
+  | 'RPC_FAILURE'
+  | 'UNSUPPORTED_TOKEN';
+
+export type TokenAllowanceResult = {
+  status: AllowanceReadStatus;
+  allowanceRaw?: bigint;
+  formattedAllowance: string;
+  tokenSymbol?: string;
+  tokenDecimals?: number;
+  error?: string;
+};
+
 export type TokenBalance = {
   symbol: string;
   address: string;
@@ -44,6 +59,19 @@ const ERC20_BALANCE_ABI = [
     type: 'function',
     stateMutability: 'view',
     inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const;
+
+const ERC20_ALLOWANCE_ABI = [
+  {
+    name: 'allowance',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
     outputs: [{ name: '', type: 'uint256' }],
   },
 ] as const;
@@ -274,6 +302,107 @@ export async function getLiveWalletOverview(options?: {
   });
 
   return result;
+}
+
+/**
+ * Reads live on-chain ERC-20 `allowance(owner, spender)` on Sepolia (CSF-03 Fix).
+ *
+ * Strictly distinguishes:
+ * - REAL_ALLOWANCE: Verified on-chain uint256 allowance read from Sepolia RPC.
+ * - UNKNOWN_ALLOWANCE: Owner address or RPC URL is unconfigured.
+ * - RPC_FAILURE: RPC connection failed, timed out, or contract call reverted.
+ * - UNSUPPORTED_TOKEN: Token contract is not in the verified Sepolia token registry.
+ *
+ * Invariant: Never fabricates or presents unknown/failed data as verified zero (0n).
+ */
+export async function getTokenAllowance(params: {
+  tokenAddress: string;
+  ownerAddress?: string;
+  spenderAddress: string;
+  customRpcUrl?: string;
+}): Promise<TokenAllowanceResult> {
+  const { tokenAddress, ownerAddress, spenderAddress, customRpcUrl } = params;
+
+  // 1. Check whether token is in the verified Sepolia registry
+  const supportedToken = Object.values(SUPPORTED_TOKENS).find(
+    (t) => t.address.toLowerCase() === (tokenAddress || '').toLowerCase()
+  );
+
+  if (!supportedToken) {
+    return {
+      status: 'UNSUPPORTED_TOKEN',
+      formattedAllowance: 'Unsupported Token',
+      error: `Token contract ${tokenAddress} is not in the verified Sepolia token registry.`,
+    };
+  }
+
+  // 2. Resolve owner address
+  const resolvedOwner = ownerAddress || getAgentWalletAddress().address;
+  const isOwnerValid =
+    Boolean(resolvedOwner) &&
+    /^0x[0-9a-fA-F]{40}$/.test(resolvedOwner) &&
+    resolvedOwner.toLowerCase() !== '0x0000000000000000000000000000000000000000';
+
+  const isSpenderValid = Boolean(spenderAddress) && /^0x[0-9a-fA-F]{40}$/.test(spenderAddress);
+  const rpcUrl = customRpcUrl || process.env.RPC_URL;
+
+  if (!isOwnerValid || !isSpenderValid || !rpcUrl) {
+    return {
+      status: 'UNKNOWN_ALLOWANCE',
+      formattedAllowance: 'Unknown (Unverified)',
+      tokenSymbol: supportedToken.symbol,
+      tokenDecimals: supportedToken.decimals,
+      error: 'Owner wallet address, spender address, or RPC URL is not configured for on-chain allowance query.',
+    };
+  }
+
+  // 3. Query on-chain allowance(owner, spender)
+  try {
+    const connection = await verifySepoliaConnection(rpcUrl);
+    if (connection.status !== 'CONNECTED') {
+      return {
+        status: 'RPC_FAILURE',
+        formattedAllowance: 'Unavailable (RPC Error)',
+        tokenSymbol: supportedToken.symbol,
+        tokenDecimals: supportedToken.decimals,
+        error: connection.error || `Sepolia RPC connection status: ${connection.status}`,
+      };
+    }
+
+    const client = getPublicClient(rpcUrl);
+    const rawAllowance = await client.readContract({
+      address: getAddress(supportedToken.address),
+      abi: ERC20_ALLOWANCE_ABI,
+      functionName: 'allowance',
+      args: [getAddress(resolvedOwner), getAddress(spenderAddress)],
+    });
+
+    if (typeof rawAllowance !== 'bigint') {
+      return {
+        status: 'RPC_FAILURE',
+        formattedAllowance: 'Unavailable (RPC Error)',
+        tokenSymbol: supportedToken.symbol,
+        tokenDecimals: supportedToken.decimals,
+        error: 'Invalid allowance response from RPC node.',
+      };
+    }
+
+    return {
+      status: 'REAL_ALLOWANCE',
+      allowanceRaw: rawAllowance,
+      formattedAllowance: formatUnits(rawAllowance, supportedToken.decimals),
+      tokenSymbol: supportedToken.symbol,
+      tokenDecimals: supportedToken.decimals,
+    };
+  } catch (err: unknown) {
+    return {
+      status: 'RPC_FAILURE',
+      formattedAllowance: 'Unavailable (RPC Error)',
+      tokenSymbol: supportedToken.symbol,
+      tokenDecimals: supportedToken.decimals,
+      error: err instanceof Error ? err.message : 'Failed to query ERC-20 allowance from Sepolia RPC',
+    };
+  }
 }
 
 /**

@@ -23,6 +23,7 @@ interface EvidencePanelProps {
   prepareResult?: PrepareResult | null;
   executionResult?: AuthorizeResult | null;
   onAuthorize?: (proposalId: string) => Promise<void>;
+  onCancel?: () => void;
   isAuthorizing?: boolean;
 }
 
@@ -30,6 +31,7 @@ export default function EvidencePanel({
   prepareResult,
   executionResult,
   onAuthorize,
+  onCancel,
   isAuthorizing = false,
 }: EvidencePanelProps) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -71,7 +73,13 @@ export default function EvidencePanel({
                         ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
                         : "bg-blue-500/10 text-blue-400 border-blue-500/20"
                     }`}>
-                      {prepareResult.aiProvenance === 'LIVE_AI' ? 'LIVE AI' : 'FALLBACK PARSER'}
+                      {prepareResult.aiProvenance === 'LIVE_AI'
+                        ? prepareResult.aiProviderUsed === 'groq'
+                          ? `GROQ AI · ${prepareResult.aiModelUsed || 'openai/gpt-oss-120b'}`
+                          : prepareResult.aiProviderUsed === 'gemini'
+                          ? `GEMINI AI · ${prepareResult.aiModelUsed || 'gemini-3.8-flash'}`
+                          : 'LIVE AI'
+                        : 'FALLBACK PARSER'}
                     </span>
                   )}
                   <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-accent-blue/10 text-accent-blue border border-accent-blue/20">
@@ -113,19 +121,29 @@ export default function EvidencePanel({
   // Phase 2 Completed: Execution outcome
   if (executionResult) {
     const isSuccess = executionResult.success && executionResult.executionResult?.success;
-    const isPendingReceipt = !isSuccess && Boolean(executionResult.error?.includes("RECEIPT_PENDING"));
+    const isPendingReceipt =
+      !isSuccess &&
+      Boolean(
+        executionResult.error?.includes("RECEIPT_PENDING") ||
+          executionResult.error?.includes("POST_BROADCAST_DB_FAILURE")
+      );
+    const isBroadcastUncertain =
+      !isSuccess && Boolean(executionResult.error?.includes("BROADCAST_UNCERTAIN"));
+    const isRevertedOnChain =
+      !isSuccess && executionResult.executionResult?.receiptStatus === "reverted";
+    const txHash = executionResult.executionResult?.transactionHash;
 
     const cardBorder = isSuccess
-      ? 'border-success/20 bg-success/5'
-      : isPendingReceipt
-      ? 'border-amber-500/20 bg-amber-500/5'
-      : 'border-danger/20 bg-danger/5';
+      ? "border-success/20 bg-success/5"
+      : isPendingReceipt || isBroadcastUncertain
+      ? "border-amber-500/30 bg-amber-500/5"
+      : "border-danger/20 bg-danger/5";
 
     const titleColor = isSuccess
-      ? 'text-success'
-      : isPendingReceipt
-      ? 'text-amber-400'
-      : 'text-danger';
+      ? "text-success"
+      : isPendingReceipt || isBroadcastUncertain
+      ? "text-amber-400"
+      : "text-danger";
 
     return (
       <div className={`border rounded-xl overflow-hidden shadow-lg ${cardBorder}`}>
@@ -134,7 +152,7 @@ export default function EvidencePanel({
             <div className="mt-1">
               {isSuccess ? (
                 <CheckCircle2 className="w-8 h-8 text-success" />
-              ) : isPendingReceipt ? (
+              ) : isPendingReceipt || isBroadcastUncertain ? (
                 <Clock className="w-8 h-8 text-amber-400 animate-pulse" />
               ) : (
                 <ShieldX className="w-8 h-8 text-danger" />
@@ -143,43 +161,70 @@ export default function EvidencePanel({
             <div className="flex-1">
               <h3 className={`text-lg font-semibold ${titleColor}`}>
                 {isSuccess
-                  ? "Transaction Authorized & Confirmed"
+                  ? "Transaction Authorized & Confirmed On-Chain"
                   : isPendingReceipt
                   ? "Transaction Broadcast — Pending On-Chain Confirmation"
-                  : "Execution Blocked / Failed"}
+                  : isBroadcastUncertain
+                  ? "Broadcast Outcome Uncertain — Locked Against Duplicate Replay"
+                  : isRevertedOnChain
+                  ? "Transaction Mined — Execution Reverted On-Chain"
+                  : "Execution Blocked / Failed Before Broadcast"}
               </h3>
 
-              {isSuccess && executionResult.executionResult?.transactionHash ? (
-                <div className="mt-2 space-y-1">
-                  <p className="text-sm text-gray-300 break-all">
-                    <span className="font-medium text-gray-400">Tx Hash:</span> {executionResult.executionResult.transactionHash}
+              {isSuccess && txHash ? (
+                <div className="mt-2 space-y-1.5">
+                  <p className="text-sm text-gray-300 break-all font-mono">
+                    <span className="font-sans font-medium text-gray-400">Tx Hash:</span> {txHash}
                   </p>
                   <p className="text-sm text-gray-400">
                     <span className="font-medium text-gray-400">Proposal ID:</span> {executionResult.proposalId}
                   </p>
                   <p className="text-sm text-gray-400">
-                    <span className="font-medium text-gray-400">Status:</span> {executionResult.executionResult.receiptStatus || "confirmed"}
+                    <span className="font-medium text-gray-400">On-Chain State:</span>{" "}
+                    <span className="text-success font-mono uppercase">
+                      {executionResult.executionResult?.receiptStatus || "CONFIRMED"}
+                    </span>
                   </p>
+                  <div className="pt-1">
+                    <a
+                      href={`https://sepolia.etherscan.io/tx/${txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-accent-blue hover:underline"
+                    >
+                      View Verified Receipt on Sepolia Etherscan
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
                 </div>
-              ) : isPendingReceipt ? (
-                <div className="mt-2 space-y-1">
-                  <p className="text-sm text-gray-300">
-                    {executionResult.error}
-                  </p>
+              ) : isPendingReceipt || isBroadcastUncertain ? (
+                <div className="mt-2 space-y-1.5">
+                  <p className="text-sm text-gray-300">{executionResult.error}</p>
+                  {txHash && (
+                    <p className="text-xs font-mono text-gray-300 break-all">
+                      Tx Hash: {txHash}
+                    </p>
+                  )}
                   {executionResult.proposalId && (
                     <p className="text-sm text-gray-400">
                       <span className="font-medium text-gray-400">Proposal ID:</span> {executionResult.proposalId}
                     </p>
                   )}
-                  <p className="text-xs text-amber-400/80 mt-1">
-                    Evidence safely locked in database. You may reconcile this transaction once block confirmation completes.
+                  <p className="text-xs text-amber-400/90 mt-1">
+                    Proposal is locked in non-replayable state ({isBroadcastUncertain ? "EXECUTION_UNKNOWN" : "RECONCILIATION_REQUIRED"}) so retries cannot cause a duplicate transfer.
                   </p>
                 </div>
               ) : (
-                <div className="mt-2 space-y-1">
+                <div className="mt-2 space-y-1.5">
                   <p className="text-sm text-gray-300">
-                    <span className="font-medium text-gray-400">Error:</span> {executionResult.error || executionResult.executionResult?.error || "Transaction blocked"}
+                    <span className="font-medium text-gray-400">Reason:</span>{" "}
+                    {executionResult.error || executionResult.executionResult?.error || "Transaction blocked"}
                   </p>
+                  {txHash && (
+                    <p className="text-xs font-mono text-gray-400 break-all">
+                      Tx Hash: {txHash}
+                    </p>
+                  )}
                   {executionResult.proposalId && (
                     <p className="text-sm text-gray-400">
                       <span className="font-medium text-gray-400">Proposal ID:</span> {executionResult.proposalId}
@@ -233,6 +278,9 @@ export default function EvidencePanel({
           isBlocked={isBlocked}
           isDemo={isDemo}
           error={prepareResult?.error}
+          aiProvenance={prepareResult?.aiProvenance}
+          aiProviderUsed={prepareResult?.aiProviderUsed}
+          aiModelUsed={prepareResult?.aiModelUsed}
         />
       )}
 
@@ -282,24 +330,36 @@ export default function EvidencePanel({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => onAuthorize && onAuthorize(proposalId)}
-              disabled={isAuthorizing}
-              className="px-6 py-2.5 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-500 disabled:opacity-50 transition-colors flex items-center gap-2 shadow-sm text-sm"
-            >
-              {isAuthorizing ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Authorizing &amp; Signing...
-                </>
-              ) : (
-                <>
-                  Confirm &amp; Execute Transaction
-                  <ArrowRight className="w-4 h-4" />
-                </>
+            <div className="flex items-center gap-3">
+              {onCancel && (
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  disabled={isAuthorizing}
+                  className="px-4 py-2.5 bg-background border border-border text-gray-300 font-medium rounded-lg hover:bg-surface-hover hover:text-white disabled:opacity-50 transition-colors text-sm"
+                >
+                  Cancel Proposal
+                </button>
               )}
-            </button>
+              <button
+                type="button"
+                onClick={() => onAuthorize && onAuthorize(proposalId)}
+                disabled={isAuthorizing}
+                className="px-6 py-2.5 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-500 disabled:opacity-50 transition-colors flex items-center gap-2 shadow-sm text-sm"
+              >
+                {isAuthorizing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Authorizing &amp; Signing...
+                  </>
+                ) : (
+                  <>
+                    Confirm &amp; Execute Transaction
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -312,9 +372,31 @@ export default function EvidencePanel({
               <ShieldAlert className="w-5 h-5" />
             </div>
             <div>
-              <h5 className="font-semibold text-sm text-red-300">
-                Execution Permanently Prohibited
-              </h5>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h5 className="font-semibold text-sm text-red-300">
+                  Execution Permanently Prohibited
+                </h5>
+                {!analysis && prepareResult?.aiProvenance && (
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-medium border ${
+                    prepareResult.aiProvenance === 'LIVE_AI'
+                      ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                      : "bg-blue-500/15 text-blue-300 border-blue-500/30"
+                  }`}>
+                    {prepareResult.aiProvenance === 'LIVE_AI'
+                      ? prepareResult.aiProviderUsed === 'groq'
+                        ? `GROQ AI · ${prepareResult.aiModelUsed || 'openai/gpt-oss-120b'}`
+                        : prepareResult.aiProviderUsed === 'gemini'
+                        ? `GEMINI AI · ${prepareResult.aiModelUsed || 'gemini-3.8-flash'}`
+                        : 'LIVE AI'
+                      : 'FALLBACK PARSER'}
+                  </span>
+                )}
+              </div>
+              {prepareResult?.error && (
+                <p className="text-xs text-red-200/90 mt-1 font-medium">
+                  {prepareResult.error}
+                </p>
+              )}
               <p className="text-xs text-gray-400 mt-0.5">
                 The agent signing key is strictly isolated and will not sign or broadcast this transaction.
               </p>

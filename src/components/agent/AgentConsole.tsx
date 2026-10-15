@@ -6,10 +6,13 @@ import {
   prepareTransactionIntent,
   testSecurityFixtureAction,
   authorizeAndExecute,
+  cancelProposalAction,
   PrepareResult,
   AuthorizeResult,
 } from "@/app/actions/orchestrator";
 import EvidencePanel from "./EvidencePanel";
+import SecurityHistoryPanel from "./SecurityHistoryPanel";
+import PolicyManagementPanel from "./PolicyManagementPanel";
 
 const QUICK_DEMO_FIXTURES = [
   { id: "excessive-finite-approval", label: "Phishing: 1M USDC Approval", type: "threat" },
@@ -19,14 +22,14 @@ const QUICK_DEMO_FIXTURES = [
   { id: "safe-bounded-approval", label: "Safe: 50 USDC Approval", type: "safe" },
 ];
 
-export default function AgentConsole() {
+export default function AgentConsole({ walletAddress }: { walletAddress?: string }) {
   const [inputCommand, setInputCommand] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [selectedFixture, setSelectedFixture] = useState<string | null>(null);
   const [prepareResult, setPrepareResult] = useState<PrepareResult | null>(null);
   const [executionResult, setExecutionResult] = useState<AuthorizeResult | null>(null);
-  
+  const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
   const [, startTransition] = useTransition();
 
   const handlePrepare = async (e: React.FormEvent) => {
@@ -42,6 +45,7 @@ export default function AgentConsole() {
       try {
         const res = await prepareTransactionIntent(inputCommand);
         setPrepareResult(res);
+        setHistoryRefreshTrigger((c) => c + 1);
       } catch (error) {
         setPrepareResult({ success: false, error: (error as Error).message, step: "AUTH" });
       } finally {
@@ -77,6 +81,7 @@ export default function AgentConsole() {
     try {
       const res = await authorizeAndExecute(proposalId);
       setExecutionResult(res);
+      setHistoryRefreshTrigger((c) => c + 1);
     } catch (error) {
       setExecutionResult({ success: false, proposalId, error: (error as Error).message });
     } finally {
@@ -84,9 +89,23 @@ export default function AgentConsole() {
     }
   };
 
+  const handleCancelProposal = async () => {
+    const idToCancel = prepareResult?.proposalId;
+    setPrepareResult(null);
+    setExecutionResult(null);
+    if (idToCancel) {
+      try {
+        await cancelProposalAction(idToCancel);
+        setHistoryRefreshTrigger((c) => c + 1);
+      } catch {
+        // Ignore cancellation error if already terminal
+      }
+    }
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="bg-surface border border-border rounded-xl p-6">
+    <div className="space-y-8">
+      <section id="agent-console" className="bg-surface border border-border rounded-xl p-6 scroll-mt-6">
         <h2 className="text-xl font-semibold mb-4">Agent Command Center</h2>
         <form onSubmit={handlePrepare} className="relative">
           <input
@@ -94,7 +113,7 @@ export default function AgentConsole() {
             value={inputCommand}
             onChange={(e) => setInputCommand(e.target.value)}
             disabled={isProcessing || isAuthorizing}
-            placeholder="e.g., 'Show my balance' or 'Send 0.05 ETH to alice'"
+            placeholder="e.g., 'Show my balance' or 'Send 0.01 ETH to alice'"
             className="w-full bg-background border border-border rounded-lg pl-4 pr-12 py-3 text-foreground focus:outline-none focus:border-accent-blue focus:ring-1 focus:ring-accent-blue transition-all disabled:opacity-50"
           />
           <button
@@ -154,14 +173,19 @@ export default function AgentConsole() {
             </span>
           </div>
         )}
-      </div>
+      </section>
 
       <EvidencePanel
         prepareResult={prepareResult}
         executionResult={executionResult}
         onAuthorize={handleAuthorize}
+        onCancel={handleCancelProposal}
         isAuthorizing={isAuthorizing}
       />
+
+      <SecurityHistoryPanel refreshTrigger={historyRefreshTrigger} />
+
+      <PolicyManagementPanel walletAddress={walletAddress} />
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
 import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { IntentIntegrityProof } from './iip';
 import { ProposalProvenance } from '../domain/schemas';
 
@@ -46,8 +48,8 @@ export const TERMINAL_STATES: ReadonlySet<ProposalStatus> = new Set([
  * Arbitrary transitions (e.g. SUBMITTED -> PREPARED or CONFIRMED -> SUBMITTING) are strictly forbidden.
  */
 export const ALLOWED_STATUS_TRANSITIONS: Readonly<Record<ProposalStatus, ReadonlySet<ProposalStatus>>> = {
-  PREPARED: new Set(['AUTHORIZED', 'CANCELLED', 'EXPIRED']),
-  AUTHORIZED: new Set(['SUBMITTING', 'CANCELLED', 'EXPIRED']),
+  PREPARED: new Set(['AUTHORIZED', 'CANCELLED', 'EXPIRED', 'FAILED']),
+  AUTHORIZED: new Set(['SUBMITTING', 'CANCELLED', 'EXPIRED', 'FAILED']),
   SUBMITTING: new Set(['SUBMITTED', 'CONFIRMED', 'REVERTED', 'FAILED_BEFORE_BROADCAST', 'FAILED', 'RECONCILIATION_REQUIRED', 'EXECUTION_UNKNOWN']),
   SUBMITTED: new Set(['CONFIRMED', 'REVERTED', 'RECONCILIATION_REQUIRED', 'EXECUTION_UNKNOWN']),
   RECONCILIATION_REQUIRED: new Set(['CONFIRMED', 'REVERTED', 'FAILED']),
@@ -86,6 +88,25 @@ export function ensureSessionsTable(db: Database.Database): void {
   `);
 }
 
+export function ensurePolicyTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_policies (
+      owner_id TEXT PRIMARY KEY,
+      policy_json TEXT NOT NULL,
+      updated_at DATETIME NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS policy_audit_log (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      previous_policy_json TEXT NOT NULL,
+      new_policy_json TEXT NOT NULL,
+      created_at DATETIME NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_policy_audit_owner ON policy_audit_log(owner_id, created_at DESC);
+  `);
+}
+
 export function getDb(): Database.Database {
   if (!_db) {
     const dbPath = resolveDatabasePath();
@@ -94,6 +115,7 @@ export function getDb(): Database.Database {
     _db.pragma('busy_timeout = 5000');
     migrateSchema(_db, dbPath);
     ensureSessionsTable(_db);
+    ensurePolicyTables(_db);
   }
   return _db;
 }
@@ -109,7 +131,7 @@ export function backupDatabase(destinationPath: string): void {
     throw new Error('CANNOT_BACKUP_MEMORY_DB: Backup requires a persistent database file.');
   }
   db.pragma('wal_checkpoint(TRUNCATE)');
-  fs.copyFileSync(dbPath, destinationPath);
+  fs.copyFileSync(/*turbopackIgnore: true*/ dbPath, /*turbopackIgnore: true*/ destinationPath);
 }
 
 export function migrateSchema(db: Database.Database, dbPath?: string): void {
@@ -135,11 +157,11 @@ export function migrateSchema(db: Database.Database, dbPath?: string): void {
     return;
   }
 
-  if (dbPath && dbPath !== ':memory:' && fs.existsSync(dbPath)) {
+  if (dbPath && dbPath !== ':memory:' && fs.existsSync(/*turbopackIgnore: true*/ dbPath)) {
     try {
       db.pragma('wal_checkpoint(TRUNCATE)');
       const backupPath = `${dbPath}.bak.${Date.now()}`;
-      fs.copyFileSync(dbPath, backupPath);
+      fs.copyFileSync(/*turbopackIgnore: true*/ dbPath, /*turbopackIgnore: true*/ backupPath);
     } catch {
       // Backup attempt logged/handled safely
     }
@@ -544,11 +566,165 @@ export function reconcileProposal(
   return result.changes === 1;
 }
 
+/**
+ * Lists recent proposals for an authenticated owner (or all proposals if ownerId is '*'),
+ * ordered newest first.
+ */
+export function listProposalsByOwner(ownerId: string, limit: number = 25): ProposalRecord[] {
+  const db = getDb();
+  const safeLimit = Math.max(1, Math.min(limit, 100));
+  const rows = (
+    ownerId === '*'
+      ? db
+          .prepare(
+            `SELECT id, owner_id, digest, iip_data, status, provenance, is_executable,
+                    created_at, expires_at, authorized_at, tx_hash
+             FROM proposals ORDER BY created_at DESC, rowid DESC LIMIT ?`
+          )
+          .all(safeLimit)
+      : db
+          .prepare(
+            `SELECT id, owner_id, digest, iip_data, status, provenance, is_executable,
+                    created_at, expires_at, authorized_at, tx_hash
+             FROM proposals WHERE owner_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`
+          )
+          .all(ownerId, safeLimit)
+  ) as Array<{
+    id: string;
+    owner_id: string;
+    digest: string;
+    iip_data: string;
+    status: ProposalStatus;
+    provenance?: string;
+    is_executable?: number;
+    created_at: string;
+    expires_at: string;
+    authorized_at: string | null;
+    tx_hash: string | null;
+  }>;
+
+  const records: ProposalRecord[] = [];
+  for (const row of rows) {
+    try {
+      const provenance = (row.provenance as ProposalProvenance) || 'UNVERIFIED';
+      records.push({
+        id: row.id,
+        ownerId: row.owner_id,
+        digest: row.digest,
+        iipData: deserializeIIP(row.iip_data),
+        status: row.status,
+        provenance,
+        isExecutable: Boolean(row.is_executable) && provenance === 'LIVE_VERIFIED',
+        createdAt: row.created_at,
+        expiresAt: row.expires_at,
+        authorizedAt: row.authorized_at,
+        txHash: row.tx_hash,
+      });
+    } catch {
+      // Skip corrupted historical row safely
+    }
+  }
+  return records;
+}
+
+// ─── Durable Broadcast Recovery Journal (R8.4 Section 3) ────────────────────
+// When a transaction is accepted by the blockchain (Phase B) and the subsequent
+// SQLite update (`markSubmitted`) fails (Phase C), this file-backed journal
+// ensures the `(proposalId, txHash)` pair survives a server restart and can be
+// recovered without ever broadcasting a second transaction.
+
+export type BroadcastRecoveryJournalEntry = {
+  proposalId: string;
+  txHash: string;
+  ownerId: string;
+  recordedAt: string;
+};
+
+export function resolveRecoveryJournalPath(): string {
+  if (process.env.SENTINAI_RECOVERY_JOURNAL_PATH) {
+    return process.env.SENTINAI_RECOVERY_JOURNAL_PATH;
+  }
+  if (process.env.VITEST === 'true' || process.env.NODE_ENV === 'test') {
+    return path.join(os.tmpdir(), `sentinai-recovery-journal-${process.pid}.json`);
+  }
+  const dbPath = resolveDatabasePath();
+  return `${dbPath}.recovery-journal.json`;
+}
+
+export function writeBroadcastRecoveryJournal(
+  proposalId: string,
+  txHash: string,
+  ownerId: string
+): void {
+  try {
+    const journalPath = resolveRecoveryJournalPath();
+    let entries: Record<string, BroadcastRecoveryJournalEntry> = {};
+    if (fs.existsSync(/*turbopackIgnore: true*/ journalPath)) {
+      try {
+        entries = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ journalPath, 'utf8'));
+      } catch {
+        entries = {};
+      }
+    }
+    entries[proposalId] = {
+      proposalId,
+      txHash,
+      ownerId,
+      recordedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(/*turbopackIgnore: true*/ journalPath, JSON.stringify(entries, null, 2), 'utf8');
+  } catch {
+    // Non-fatal fallback if filesystem is read-only
+  }
+}
+
+export function readBroadcastRecoveryJournal(
+  proposalId: string
+): BroadcastRecoveryJournalEntry | undefined {
+  try {
+    const journalPath = resolveRecoveryJournalPath();
+    if (!fs.existsSync(/*turbopackIgnore: true*/ journalPath)) return undefined;
+    const entries = JSON.parse(
+      fs.readFileSync(/*turbopackIgnore: true*/ journalPath, 'utf8')
+    ) as Record<string, BroadcastRecoveryJournalEntry>;
+    return entries[proposalId];
+  } catch {
+    return undefined;
+  }
+}
+
+export function clearBroadcastRecoveryJournal(proposalId: string): void {
+  try {
+    const journalPath = resolveRecoveryJournalPath();
+    if (!fs.existsSync(/*turbopackIgnore: true*/ journalPath)) return;
+    const entries = JSON.parse(
+      fs.readFileSync(/*turbopackIgnore: true*/ journalPath, 'utf8')
+    ) as Record<string, BroadcastRecoveryJournalEntry>;
+    if (proposalId in entries) {
+      delete entries[proposalId];
+      fs.writeFileSync(/*turbopackIgnore: true*/ journalPath, JSON.stringify(entries, null, 2), 'utf8');
+    }
+  } catch {
+    // Ignore cleanup errors
+  }
+}
+
 // ─── Test Helpers ────────────────────────────────────────────────────────────
 
 export function _resetProposalsForTesting(): void {
   const db = getDb();
+  ensurePolicyTables(db);
   db.exec('DELETE FROM proposals');
+  db.exec('DELETE FROM user_policies');
+  db.exec('DELETE FROM policy_audit_log');
+  try {
+    const journalPath = resolveRecoveryJournalPath();
+    if (fs.existsSync(/*turbopackIgnore: true*/ journalPath)) {
+      fs.unlinkSync(/*turbopackIgnore: true*/ journalPath);
+    }
+  } catch {
+    // Ignore cleanup errors
+  }
 }
 
 export function _closeDbForTesting(): void {

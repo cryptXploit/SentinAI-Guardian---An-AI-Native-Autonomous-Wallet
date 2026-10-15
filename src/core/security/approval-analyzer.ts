@@ -1,6 +1,9 @@
 import { formatUnits } from 'viem';
 import { TokenInfo, SUPPORTED_TOKENS } from '../transaction/builder';
 import { UserPolicy, findTokenApprovalPolicy } from '../domain/schemas';
+import { AllowanceReadStatus } from '../web3/wallet-service';
+
+export type { AllowanceReadStatus };
 
 export const EXACT_MAX_UINT256 = (1n << 256n) - 1n; // 2^256 - 1
 export const EXTREMELY_LARGE_FINITE_THRESHOLD = 1n << 255n; // 2^255
@@ -25,11 +28,13 @@ export interface ApprovalExposureAnalysis {
   tokenAddress: string;
   spender: string;
   spenderName?: string;
-  currentAllowanceRaw: bigint;
+  allowanceStatus: AllowanceReadStatus;
+  allowanceError?: string;
+  currentAllowanceRaw?: bigint;
   currentAllowanceFormatted: string;
   proposedAllowanceRaw: bigint;
   proposedAllowanceFormatted: string;
-  deltaRaw: bigint;
+  deltaRaw?: bigint;
   deltaFormatted: string;
   isUnlimited: boolean;
   classification: AllowanceClassification;
@@ -43,20 +48,23 @@ export interface ApprovalExposureAnalysis {
 }
 
 /**
- * Analyzes the exposure impact of an ERC-20 approval with exact uint256 classification
- * and token-specific approval policy enforcement.
+ * Analyzes the exposure impact of an ERC-20 approval with exact uint256 classification,
+ * token-specific approval policy enforcement, and truthful on-chain allowance provenance (CSF-03 Fix).
  *
  * Guaranteed Properties:
  * 1. Exact MaxUint256 (2^256-1) is distinguished from extremely large finite allowances (>= 2^255).
  * 2. Native ETH transfer limits are NEVER reused as ERC-20 approval caps.
  * 3. Token policies are identified by (chainId, contractAddress) with token-specific base units.
  * 4. Missing token policy fails closed by default.
+ * 5. Unknown, RPC-failed, or unsupported allowances are NEVER presented as verified zero (0n).
  */
 export function analyzeApprovalExposure(params: {
   tokenAddress: string;
   spenderAddress: string;
   proposedAllowanceRaw: bigint;
   currentAllowanceRaw?: bigint;
+  allowanceStatus?: AllowanceReadStatus;
+  allowanceError?: string;
   chainId?: number;
   policy?: UserPolicy;
   tokenRegistry?: Record<string, TokenInfo>;
@@ -66,7 +74,9 @@ export function analyzeApprovalExposure(params: {
     tokenAddress,
     spenderAddress,
     proposedAllowanceRaw,
-    currentAllowanceRaw = 0n,
+    currentAllowanceRaw,
+    allowanceStatus,
+    allowanceError,
     chainId = 11155111,
     policy,
     tokenRegistry = SUPPORTED_TOKENS,
@@ -79,6 +89,18 @@ export function analyzeApprovalExposure(params: {
   );
   const decimals = token?.decimals ?? 18;
   const tokenSymbol = token?.symbol ?? 'TOKEN';
+
+  // Determine truthful allowance read status (never fabricate 0n when unverified)
+  let effectiveAllowanceStatus: AllowanceReadStatus;
+  if (allowanceStatus) {
+    effectiveAllowanceStatus = allowanceStatus;
+  } else if (!token) {
+    effectiveAllowanceStatus = 'UNSUPPORTED_TOKEN';
+  } else if (currentAllowanceRaw !== undefined) {
+    effectiveAllowanceStatus = 'REAL_ALLOWANCE';
+  } else {
+    effectiveAllowanceStatus = 'UNKNOWN_ALLOWANCE';
+  }
 
   // 2. Resolve spender name/alias
   let spenderName: string | undefined;
@@ -112,30 +134,48 @@ export function analyzeApprovalExposure(params: {
     }
   }
 
-  let currentFormatted = '0';
-  try {
-    currentFormatted = formatUnits(currentAllowanceRaw, decimals);
-  } catch {
-    currentFormatted = currentAllowanceRaw.toString();
-  }
+  let currentFormatted: string;
+  let deltaRaw: bigint | undefined;
+  let deltaFormatted: string;
 
-  // Delta calculation
-  const deltaRaw = proposedAllowanceRaw - currentAllowanceRaw;
-  let deltaFormatted = '0';
-  if (classification === 'EXACT_UNLIMITED_ALLOWANCE') {
-    deltaFormatted = '+UNLIMITED';
-  } else if (deltaRaw >= 0n) {
+  if (effectiveAllowanceStatus === 'REAL_ALLOWANCE' && currentAllowanceRaw !== undefined) {
     try {
-      deltaFormatted = `+${formatUnits(deltaRaw, decimals)}`;
+      currentFormatted = formatUnits(currentAllowanceRaw, decimals);
     } catch {
-      deltaFormatted = `+${deltaRaw.toString()}`;
+      currentFormatted = currentAllowanceRaw.toString();
+    }
+
+    deltaRaw = proposedAllowanceRaw - currentAllowanceRaw;
+    if (classification === 'EXACT_UNLIMITED_ALLOWANCE') {
+      deltaFormatted = '+UNLIMITED';
+    } else if (deltaRaw >= 0n) {
+      try {
+        deltaFormatted = `+${formatUnits(deltaRaw, decimals)}`;
+      } catch {
+        deltaFormatted = `+${deltaRaw.toString()}`;
+      }
+    } else {
+      try {
+        deltaFormatted = `-${formatUnits(-deltaRaw, decimals)}`;
+      } catch {
+        deltaFormatted = `-${(-deltaRaw).toString()}`;
+      }
     }
   } else {
-    try {
-      deltaFormatted = `-${formatUnits(-deltaRaw, decimals)}`;
-    } catch {
-      deltaFormatted = `-${(-deltaRaw).toString()}`;
+    // CSF-03 Invariant: Never present unknown, RPC-failed, or unsupported allowance as verified zero
+    if (effectiveAllowanceStatus === 'RPC_FAILURE') {
+      currentFormatted = 'Unavailable (RPC Error)';
+    } else if (effectiveAllowanceStatus === 'UNSUPPORTED_TOKEN') {
+      currentFormatted = 'Unsupported Token';
+    } else {
+      currentFormatted = 'Unknown (Unverified)';
     }
+
+    deltaRaw = undefined;
+    deltaFormatted =
+      classification === 'EXACT_UNLIMITED_ALLOWANCE'
+        ? '+UNLIMITED'
+        : 'Unknown (Allowance Unverified)';
   }
 
   // 4. Token-Specific Policy Evaluation (NEVER reuse maxTransferAmountETH)
@@ -206,10 +246,16 @@ export function analyzeApprovalExposure(params: {
     riskSummary = `HIGH EXPOSURE: Extremely large finite allowance (${proposedFormatted}) exceeds standard risk parameters.`;
   } else if (exceedsPolicyCap) {
     riskSummary = `HIGH EXPOSURE: Proposed allowance (${proposedFormatted} ${tokenSymbol}) exceeds configured token ceiling (${policySpendingCapFormatted}).`;
-  } else if (proposedAllowanceRaw > currentAllowanceRaw) {
-    riskSummary = `Increasing spender exposure by ${deltaFormatted} ${tokenSymbol}.`;
-  } else if (proposedAllowanceRaw < currentAllowanceRaw) {
-    riskSummary = `Decreasing existing allowance from ${currentFormatted} to ${proposedFormatted} ${tokenSymbol}.`;
+  } else if (effectiveAllowanceStatus === 'REAL_ALLOWANCE' && currentAllowanceRaw !== undefined) {
+    if (proposedAllowanceRaw > currentAllowanceRaw) {
+      riskSummary = `Increasing spender exposure by ${deltaFormatted} ${tokenSymbol}.`;
+    } else if (proposedAllowanceRaw < currentAllowanceRaw) {
+      riskSummary = `Decreasing existing allowance from ${currentFormatted} to ${proposedFormatted} ${tokenSymbol}.`;
+    }
+  } else if (effectiveAllowanceStatus === 'RPC_FAILURE') {
+    riskSummary = `Current on-chain allowance could not be verified due to RPC error (${allowanceError || 'unreachable'}). Proposed bounded allowance is ${proposedFormatted} ${tokenSymbol}.`;
+  } else if (effectiveAllowanceStatus === 'UNSUPPORTED_TOKEN') {
+    riskSummary = `UNSUPPORTED TOKEN: Contract ${tokenAddress} is not a supported Sepolia token.`;
   }
 
   return {
@@ -217,7 +263,9 @@ export function analyzeApprovalExposure(params: {
     tokenAddress,
     spender: spenderAddress,
     spenderName,
-    currentAllowanceRaw,
+    allowanceStatus: effectiveAllowanceStatus,
+    allowanceError,
+    currentAllowanceRaw: effectiveAllowanceStatus === 'REAL_ALLOWANCE' ? currentAllowanceRaw : undefined,
     currentAllowanceFormatted: currentFormatted,
     proposedAllowanceRaw,
     proposedAllowanceFormatted: proposedFormatted,

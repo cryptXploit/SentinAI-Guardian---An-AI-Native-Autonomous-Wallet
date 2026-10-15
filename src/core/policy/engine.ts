@@ -2,6 +2,7 @@ import { decodeFunctionData, Address } from 'viem';
 import { ParsedIntent, UserPolicy, findTokenApprovalPolicy } from '../domain/schemas';
 import { parseTokenAmount } from '../utils/financial';
 import { TransactionCandidate, ERC20_ABI, MAX_UINT256, SUPPORTED_TOKENS } from '../transaction/builder';
+import { resolveRecipientFromPolicy } from './user-policy';
 
 export type PolicyDecision = {
   status: "ALLOW" | "BLOCKED" | "NEEDS_CLARIFICATION";
@@ -28,14 +29,15 @@ export function evaluatePolicy(
   const candidate: TransactionCandidate | undefined = isThreeArgs ? (candidateOrPolicy as TransactionCandidate) : undefined;
 
   try {
-    // 1. Recipient Validation
-    const resolvedAddress = policy.trustedContacts[intent.recipientAlias];
-    if (!resolvedAddress) {
+    // 1. Recipient Validation (Case-insensitive, disambiguated, and whitelisted 0x support)
+    const resolution = resolveRecipientFromPolicy(intent.recipientAlias, policy);
+    if (resolution.status !== 'RESOLVED') {
       return {
         status: "BLOCKED",
-        reason: `Unknown recipient alias: ${intent.recipientAlias}`
+        reason: resolution.reason
       };
     }
+    const resolvedAddress = resolution.address;
 
     // 2. Spending Limits (Native ETH ONLY)
     if (intent.action === "TRANSFER" && intent.asset === "ETH") {
@@ -46,10 +48,8 @@ export function evaluatePolicy(
           resolvedAddress
         };
       }
-      
       const intentAmount = parseTokenAmount(intent.amount, 18);
       const maxAmount = parseTokenAmount(policy.maxTransferAmountETH, 18);
-      
       if (intentAmount > maxAmount || (candidate && candidate.value > maxAmount)) {
         return {
           status: "BLOCKED",

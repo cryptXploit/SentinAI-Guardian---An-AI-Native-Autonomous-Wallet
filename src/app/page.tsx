@@ -12,7 +12,7 @@ export default async function Home() {
   const wallet = await getLiveWalletOverview();
 
   // Determine active runtime mode (Milestone R6 Section 9)
-  const isLiveAI = Boolean(process.env.GEMINI_API_KEY);
+  const isLiveAI = Boolean(process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY);
   const runtimeMode = process.env.RUNTIME_MODE === 'LIVE_TESTNET'
     ? 'LIVE_TESTNET'
     : isLiveAI
@@ -20,7 +20,7 @@ export default async function Home() {
     : 'MOCK';
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div id="overview" className="max-w-5xl mx-auto space-y-6 scroll-mt-6">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Financial Overview</h1>
@@ -49,7 +49,7 @@ export default async function Home() {
             {wallet.nativeBalance.formatted} <span className="text-xl font-normal text-gray-400">ETH</span>
           </p>
           <p className="text-xs text-gray-500 mt-2 truncate font-mono" title={wallet.address}>
-            {wallet.isConfigured ? `Address: ${wallet.address}` : "Set AGENT_PRIVATE_KEY in .env.local"}
+            {wallet.isConfigured ? `Address: ${wallet.address}` : "Set AGENT_PRIVATE_KEY in .env"}
           </p>
         </div>
 
@@ -91,15 +91,15 @@ export default async function Home() {
             </div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-gray-400">Policy Engine:</span>
-              <span className="text-success font-medium">Armed (Deterministic)</span>
+              <span className="text-success font-medium">Armed (SQLite + Deterministic)</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Agent Command Center */}
+      {/* Agent Command Center, Security Center & Policy Management */}
       <div className="mt-8">
-        <AgentConsole />
+        <AgentConsole walletAddress={wallet.address} />
       </div>
     </div>
   );

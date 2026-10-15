@@ -105,6 +105,7 @@ describe('R5E — Orchestrator Two-Phase Authenticated Actions & Phased Executio
     _resetSessionsForTesting();
     process.env.RPC_URL = 'https://sepolia.mock.rpc';
     process.env.AGENT_PRIVATE_KEY = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    process.env.APPROVED_TEST_RECIPIENT_ADDRESS = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 
     // Default: authenticated session
     vi.mocked(verifySession).mockResolvedValue({

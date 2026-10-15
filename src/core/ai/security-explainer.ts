@@ -2,7 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { TransactionAnalysisResult } from '../security/transaction-analyzer';
 
 export interface SecurityExplanationResult {
-  source: 'GEMINI_AI' | 'DETERMINISTIC_RULES';
+  source: 'GEMINI_AI' | 'GROQ_AI' | 'DETERMINISTIC_RULES';
   explanationText: string;
   keyPoints: string[];
   recommendedAction: string;
@@ -25,26 +25,26 @@ STRICT INVARIANTS:
 /**
  * Generates an educational, user-facing explanation of transaction security findings.
  * Grounded strictly in the deterministic analysis result.
+ * Priority: Gemini AI -> Groq AI -> Deterministic Rules.
  * An AI explanation NEVER modifies the underlying security verdict.
  */
 export async function explainSecurityFindings(params: {
   analysis: TransactionAnalysisResult;
   apiKey?: string;
   modelName?: string;
+  groqApiKey?: string;
+  groqModel?: string;
 }): Promise<SecurityExplanationResult> {
-  const { analysis, apiKey = process.env.GEMINI_API_KEY, modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash' } = params;
+  const {
+    analysis,
+    apiKey = process.env.GEMINI_API_KEY,
+    modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+    groqApiKey = process.env.GROQ_API_KEY,
+    groqModel = process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+  } = params;
 
-  // If live Gemini is configured, attempt AI explanation with 5s timeout
-  if (apiKey) {
-    const startTime = Date.now();
-    const abortController = new AbortController();
-    const timer = setTimeout(() => abortController.abort(), 5_000);
-
-    try {
-      const ai = new GoogleGenAI({ apiKey });
-
-      // Build safe sanitized prompt containing ONLY public analysis facts (NO secrets)
-      const prompt = `
+  // Build safe sanitized prompt containing ONLY public analysis facts (NO secrets)
+  const prompt = `
 Analyze the following transaction security verdict and explain it to the user:
 - Operation: ${analysis.operationType}
 - Verdict: ${analysis.status} (canExecute: ${analysis.canExecute})
@@ -56,6 +56,15 @@ ${analysis.findings.map((f) => `  [${f.severity}] ${f.title}: ${f.explanation}`)
 
 Format your response as a brief plain-text explanation followed by key considerations.
 `;
+
+  // Tier 1: If live Gemini is configured, attempt Gemini AI explanation with 5s timeout
+  if (apiKey) {
+    const startTime = Date.now();
+    const abortController = new AbortController();
+    const timer = setTimeout(() => abortController.abort(), 5_000);
+
+    try {
+      const ai = new GoogleGenAI({ apiKey });
 
       const response = await ai.models.generateContent({
         model: modelName,
@@ -85,11 +94,62 @@ Format your response as a brief plain-text explanation followed by key considera
       }
     } catch {
       clearTimeout(timer);
-      // Fall through to deterministic rules on AI failure / timeout
+      // Fall through to Groq or deterministic rules on Gemini failure / quota exhaustion
     }
   }
 
-  // Deterministic rule-based explanation (offline, fast, and 100% reliable)
+  // Tier 2: If Groq API key is configured, attempt Groq AI explanation with 5s timeout
+  if (groqApiKey) {
+    const startTime = Date.now();
+    const abortController = new AbortController();
+    const timer = setTimeout(() => abortController.abort(), 5_000);
+
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${groqApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: groqModel,
+          temperature: 0.2,
+          messages: [
+            { role: 'system', content: EXPLAINER_SYSTEM_PROMPT },
+            { role: 'user', content: prompt },
+          ],
+        }),
+        signal: abortController.signal,
+      });
+
+      clearTimeout(timer);
+      if (response.ok) {
+        const data = (await response.json()) as {
+          choices?: Array<{ message?: { content?: string } }>;
+        };
+        const latencyMs = Date.now() - startTime;
+        const text = data?.choices?.[0]?.message?.content || '';
+
+        if (text.trim()) {
+          return {
+            source: 'GROQ_AI',
+            explanationText: text.trim(),
+            keyPoints: analysis.findings.map((f) => `[${f.severity}] ${f.title}`),
+            recommendedAction: analysis.canExecute
+              ? 'Verify details on screen before authorizing execution.'
+              : 'Reject transaction. Do not authorize.',
+            modelUsed: groqModel,
+            latencyMs,
+          };
+        }
+      }
+    } catch {
+      clearTimeout(timer);
+      // Fall through to deterministic rules
+    }
+  }
+
+  // Tier 3: Deterministic rule-based explanation (offline, fast, and 100% reliable)
   return generateDeterministicExplanation(analysis);
 }
 

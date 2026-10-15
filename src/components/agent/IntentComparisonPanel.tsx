@@ -26,6 +26,9 @@ interface IntentComparisonPanelProps {
   isBlocked?: boolean;
   isDemo?: boolean;
   error?: string;
+  aiProvenance?: 'LIVE_AI' | 'DETERMINISTIC_FALLBACK' | 'FALLBACK_PARSER';
+  aiProviderUsed?: 'gemini' | 'groq' | 'mock' | 'fallback' | 'none';
+  aiModelUsed?: string;
 }
 
 export default function IntentComparisonPanel({
@@ -35,6 +38,10 @@ export default function IntentComparisonPanel({
   summary,
   isBlocked = false,
   isDemo = false,
+  error,
+  aiProvenance,
+  aiProviderUsed,
+  aiModelUsed,
 }: IntentComparisonPanelProps) {
   const [copiedDigest, setCopiedDigest] = useState(false);
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
@@ -42,6 +49,10 @@ export default function IntentComparisonPanel({
   if (!analysis) {
     return null;
   }
+
+  const effectiveProvenance = aiProvenance ?? summary?.aiProvenance;
+  const effectiveProvider = aiProviderUsed ?? summary?.aiProviderUsed;
+  const effectiveModel = aiModelUsed ?? summary?.aiModelUsed;
 
   const { expectedAction, decodedAction, mismatches, findings, status, canExecute } = analysis;
 
@@ -102,7 +113,7 @@ export default function IntentComparisonPanel({
             </div>
             <p className="text-xs opacity-90 mt-0.5">
               {!canExecute || isBlocked
-                ? "EXECUTION BLOCKED — Deterministic verification detected unauthorized or malicious parameters."
+                ? error || "EXECUTION BLOCKED — Deterministic verification detected unauthorized or malicious parameters."
                 : status === "SUSPICIOUS"
                 ? "ELEVATED RISK — Review warnings before proceeding with authorization."
                 : isDemo
@@ -113,13 +124,19 @@ export default function IntentComparisonPanel({
         </div>
 
         <div className="flex items-center gap-2">
-          {summary?.aiProvenance && (
+          {effectiveProvenance && (
             <span className={`hidden sm:inline-block px-2.5 py-0.5 rounded-full text-xs font-mono font-medium border ${
-              summary.aiProvenance === 'LIVE_AI'
+              effectiveProvenance === 'LIVE_AI'
                 ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
                 : "bg-blue-500/15 text-blue-300 border-blue-500/30"
             }`}>
-              {summary.aiProvenance === 'LIVE_AI' ? 'LIVE AI' : 'FALLBACK PARSER'}
+              {effectiveProvenance === 'LIVE_AI'
+                ? effectiveProvider === 'groq'
+                  ? `GROQ AI · ${effectiveModel || 'openai/gpt-oss-120b'}`
+                  : effectiveProvider === 'gemini'
+                  ? `GEMINI AI · ${effectiveModel || 'gemini-3.8-flash'}`
+                  : 'LIVE AI'
+                : 'FALLBACK PARSER'}
             </span>
           )}
           {isDemo && (
@@ -279,29 +296,56 @@ export default function IntentComparisonPanel({
       {/* 3. Approval Exposure Intelligence (if APPROVE operation) */}
       {exposure && (
         <div className="p-4 rounded-xl bg-[#121824] border border-border shadow-md space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <Lock className="w-4 h-4 text-purple-400" />
               <h5 className="text-sm font-semibold text-foreground">ERC-20 Approval Exposure Analysis</h5>
             </div>
-            <span
-              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                exposure.isUnlimited
-                  ? "bg-red-500/20 text-red-400 border border-red-500/30"
-                  : exposure.exceedsPolicyCap
-                  ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
-                  : "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-              }`}
-            >
-              {exposure.isUnlimited ? "UNLIMITED ALLOWANCE" : "BOUNDED ALLOWANCE"}
-            </span>
+            <div className="flex items-center gap-2">
+              <span
+                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase border ${
+                  exposure.allowanceStatus === "REAL_ALLOWANCE"
+                    ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                    : exposure.allowanceStatus === "RPC_FAILURE" || exposure.allowanceStatus === "UNSUPPORTED_TOKEN"
+                    ? "bg-red-500/15 text-red-300 border-red-500/30"
+                    : "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                }`}
+              >
+                {exposure.allowanceStatus === "REAL_ALLOWANCE"
+                  ? "ALLOWANCE VERIFIED ON-CHAIN"
+                  : exposure.allowanceStatus === "RPC_FAILURE"
+                  ? "ALLOWANCE RPC FAILURE"
+                  : exposure.allowanceStatus === "UNSUPPORTED_TOKEN"
+                  ? "UNSUPPORTED TOKEN"
+                  : "ALLOWANCE UNVERIFIED"}
+              </span>
+              <span
+                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                  exposure.isUnlimited
+                    ? "bg-red-500/20 text-red-400 border border-red-500/30"
+                    : exposure.exceedsPolicyCap
+                    ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                    : "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                }`}
+              >
+                {exposure.isUnlimited ? "UNLIMITED ALLOWANCE" : "BOUNDED ALLOWANCE"}
+              </span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
             <div className="p-2.5 rounded-lg bg-[#0B0F17] border border-border/50">
-              <p className="text-gray-400">Current Allowance</p>
-              <p className="text-sm font-semibold mt-1 font-mono">
-                {exposure.currentAllowanceFormatted} {exposure.tokenSymbol}
+              <p className="text-gray-400">Current On-Chain Allowance</p>
+              <p
+                className={`text-sm font-semibold mt-1 font-mono ${
+                  exposure.allowanceStatus === "REAL_ALLOWANCE"
+                    ? "text-foreground"
+                    : "text-amber-400"
+                }`}
+              >
+                {exposure.allowanceStatus === "REAL_ALLOWANCE"
+                  ? `${exposure.currentAllowanceFormatted} ${exposure.tokenSymbol}`
+                  : exposure.currentAllowanceFormatted}
               </p>
             </div>
             <div className="p-2.5 rounded-lg bg-[#0B0F17] border border-border/50">
@@ -340,6 +384,8 @@ export default function IntentComparisonPanel({
             <span className="px-2 py-0.5 rounded text-[10px] font-mono text-gray-400 bg-[#0B0F17] border border-border">
               {explanation.source === "GEMINI_AI"
                 ? `Google Gemini (${explanation.modelUsed || "gemini-3.8-flash"}) · ${explanation.latencyMs}ms`
+                : explanation.source === "GROQ_AI"
+                ? `Groq AI (${explanation.modelUsed || "openai/gpt-oss-120b"}) · ${explanation.latencyMs}ms`
                 : "Deterministic Policy Engine"}
             </span>
           </div>
