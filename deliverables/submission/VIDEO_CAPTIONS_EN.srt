@@ -1,0 +1,112 @@
+1
+00:00:00,000 --> 00:00:07,000
+Autonomous AI agents are becoming active financial participants,
+but giving an LLM direct access to a blockchain private key creates a critical security flaw.
+
+2
+00:00:07,000 --> 00:00:14,000
+LLMs are probabilistic—they hallucinate parameters, misread negations like "Do not send",
+and fall prey to prompt injection—
+
+3
+00:00:14,000 --> 00:00:20,000
+while blind signing and unlimited ERC-20 approvals cause irreversible on-chain losses.
+
+4
+00:00:20,000 --> 00:00:27,000
+Meet SentinAI Guardian, built for Topic F of the 2026 Shenzhen International FinTech Competition.
+
+5
+00:00:27,000 --> 00:00:34,000
+SentinAI Guardian enforces strict privilege separation: cloud AI models operate in an untrusted advisory zone
+to interpret English, Bengali, or Banglish commands,
+
+6
+00:00:34,000 --> 00:00:40,000
+while a deterministic server-side policy firewall governs every transaction before signing.
+
+7
+00:00:40,000 --> 00:00:48,000
+Let's prepare a safe transfer command: "Send 0.0001 ETH to alice"—also supported natively in Bengali script.
+
+8
+00:00:48,000 --> 00:00:56,500
+Our live AI provider parses the intent in under a second, identifying the TRANSFER action
+and exact 0.0001 ETH amount.
+
+9
+00:00:56,500 --> 00:01:05,000
+Immediately, our fail-closed recipient gate resolves the alias "alice" exclusively
+from the operator's SQLite Trusted Contacts registry.
+
+10
+00:01:05,000 --> 00:01:13,000
+Next, the candidate traverses our deterministic security pipeline.
+Exact string-to-BigInt math verifies the transfer against our 1.0 ETH per-transaction spend cap.
+
+11
+00:01:13,000 --> 00:01:21,500
+The semantic analyzer cross-checks raw EVM calldata with zero mismatches,
+and Viem simulates the call live on Ethereum Sepolia.
+
+12
+00:01:21,500 --> 00:01:30,000
+Finally, the server locks all parameters into an unkeyed Keccak-256 Intent Integrity Proof digest
+and halts at the mandatory Human Authorization Gate.
+
+13
+00:01:30,000 --> 00:01:38,500
+What if the AI or an attacker attempts a prohibited command?
+Requesting "Send 5 ETH to alice" is deterministically blocked by our 1.0 ETH spend cap and balance check.
+
+14
+00:01:38,500 --> 00:01:47,000
+Negated commands like "Do not send 0.1 ETH" and prompt injections like "Ignore all policies"
+are intercepted fail-closed before transaction construction.
+
+15
+00:01:47,000 --> 00:01:55,000
+Because the AI has no access to SQLite policies or signing keys,
+it can never override deterministic enforcement.
+
+16
+00:01:55,000 --> 00:02:04,000
+Here is our previously verified on-chain execution in the Audit Trail and on Sepolia Etherscan:
+transaction hash 0xfe315950...88da, confirmed in Sepolia Block #11935960.
+
+17
+00:02:04,000 --> 00:02:13,000
+It shows the verified sender and recipient 0xaeb838...2148,
+an exact transfer value of 0.00001 ETH,
+
+18
+00:02:13,000 --> 00:02:20,000
+a 21,000 gas limit floor, and 12,000 gas used under EIP-2780.
+
+19
+00:02:20,000 --> 00:02:27,000
+Our architecture enforces a strict six-step chain: untrusted AI intent parsing flows into
+schema and negation validation,
+
+20
+00:02:27,000 --> 00:02:34,000
+deterministic SQLite policy evaluation, calldata and allowance inspection,
+Sepolia RPC simulation,
+
+21
+00:02:34,000 --> 00:02:40,000
+and Gate 6.5 human approval with atomic Compare-And-Swap locking before touching the blockchain.
+
+22
+00:02:40,000 --> 00:02:47,500
+Backed by 354 passing automated tests and real Sepolia execution, SentinAI Guardian proves
+autonomous wallets can combine multilingual AI usability with deterministic financial control.
+
+23
+00:02:47,500 --> 00:02:56,000
+While our prototype uses a server-isolated Sepolia key and per-transaction caps today,
+our next phase integrates ERC-4337 smart account session keys and hardware KMS signing.
+
+24
+00:02:56,000 --> 00:03:00,000
+Thank you.

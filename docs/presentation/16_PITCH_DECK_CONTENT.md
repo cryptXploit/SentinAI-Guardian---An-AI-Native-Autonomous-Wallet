@@ -41,8 +41,8 @@
 - **Atomic CAS Lock & Recovery Journal:** SQLite Compare-And-Swap prevents double-click replay; `.recovery-journal.json` + on-chain block scanner recover from mid-broadcast RPC drops.
 
 ## Slide 8 — Live Sepolia Blockchain & Automated Test Proof
-- **Confirmed On-Chain Transaction:** `0xfe315950001536c94f363c6e7b6522eef69a2b874d958544dd91efe5ee8388da`
-- **Block & Timestamp:** Sepolia Block `#11935960` (`0xb620d8`, `2026-10-17T18:55:12Z`) · Proposal ID `7540a5f1-dcb4-4797-b46a-13ec74fa96d9`
+- **Confirmed On-Chain Transaction:** `0xfe315950001536c94f363c6e7b6522eef69a2b874d958544dd91efe5ee8388da` (`0.00001 ETH` / `10,000,000,000,000 wei` self-transfer to `alice`)
+- **Block & Timestamp:** Sepolia Block `#11935960` (`0xb620d8`, `2026-10-17T18:55:12Z`) · Proposal ID `7540a5f1-dcb4-4797-b46a-13ec74fa96d9` (`status: CONFIRMED`)
 - **EIP-2780 Gas Engineering:** Accurately distinguishes `12,000` warm self-transfer simulation gas from the `21,000` intrinsic broadcast gas floor (`gasLimit = 21000`, `gasUsed = 12000`, Fee = `1,632,000 wei`).
 - **354 Automated Tests Passing:** 33 Vitest test suites + 12/12 Headless Chrome CDP E2E browser flows verified.
 

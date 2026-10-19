@@ -12,7 +12,7 @@
 **SentinAI Guardian** is a working, on-chain verified AI-native autonomous Ethereum Sepolia wallet that separates **probabilistic natural-language intent parsing** (`Gemini 3.8 Flash` $\rightarrow$ `Groq openai/gpt-oss-120b` $\rightarrow$ `Local Fallback`) from **deterministic financial policy enforcement** (`BigInt` SQLite spend limits, calldata decoding, Sepolia RPC simulation, `keccak256` Intent Integrity Proofs, and two-phase human authorization).
 
 ### Verified On-Chain & Automated Proof Highlights
-- **Confirmed Sepolia Transaction:** [`0xfe315950001536c94f363c6e7b6522eef69a2b874d958544dd91efe5ee8388da`](https://sepolia.etherscan.io/tx/0xfe315950001536c94f363c6e7b6522eef69a2b874d958544dd91efe5ee8388da) (Block `#11935960`, Proposal ID `7540a5f1-dcb4-4797-b46a-13ec74fa96d9`, `status: CONFIRMED`)
+- **Confirmed Sepolia Transaction:** [`0xfe315950001536c94f363c6e7b6522eef69a2b874d958544dd91efe5ee8388da`](https://sepolia.etherscan.io/tx/0xfe315950001536c94f363c6e7b6522eef69a2b874d958544dd91efe5ee8388da) (`0.00001 ETH` / `10,000,000,000,000 wei`, Block `#11935960`, Proposal ID `7540a5f1-dcb4-4797-b46a-13ec74fa96d9`, `status: CONFIRMED`)
 - **Automated Test Suite:** `354 / 354` passing tests across `33` Vitest suites
 - **Real Browser E2E Verification:** `12 / 12` Headless Chrome CDP user journeys verified with zero page errors (`evidence/browser/`)
 

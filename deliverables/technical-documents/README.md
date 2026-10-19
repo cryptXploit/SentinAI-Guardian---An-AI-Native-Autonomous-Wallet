@@ -183,3 +183,12 @@ Full details are documented in [`docs/security/09_KNOWN_RISKS_AND_LIMITATIONS.md
 - **Verification & Evidence:** [`docs/competition/00_OFFICIAL_REQUIREMENTS_MATRIX.md`](./docs/competition/00_OFFICIAL_REQUIREMENTS_MATRIX.md), [`docs/verification/01_IMPLEMENTATION_REALITY_AUDIT.md`](./docs/verification/01_IMPLEMENTATION_REALITY_AUDIT.md), [`02_REAL_USER_BROWSER_TEST_REPORT.md`](./docs/verification/02_REAL_USER_BROWSER_TEST_REPORT.md), [`03_HUMAN_CLICK_BY_CLICK_BN.md`](./docs/verification/03_HUMAN_CLICK_BY_CLICK_BN.md), [`04_LIVE_EXECUTION_EVIDENCE.md`](./docs/verification/04_LIVE_EXECUTION_EVIDENCE.md), [`05_TRANSACTION_EVIDENCE_REGISTER.md`](./docs/verification/05_TRANSACTION_EVIDENCE_REGISTER.md)
 - **Architecture & Security:** [`docs/architecture/11_SYSTEM_ARCHITECTURE.md`](./docs/architecture/11_SYSTEM_ARCHITECTURE.md) – [`15_DATA_FLOW_AND_SEQUENCE.md`](./docs/architecture/15_DATA_FLOW_AND_SEQUENCE.md), [`docs/security/08_SECURITY_SELF_ASSESSMENT.md`](./docs/security/08_SECURITY_SELF_ASSESSMENT.md) – [`10_THREAT_MODEL.md`](./docs/security/10_THREAT_MODEL.md)
 - **Video Storyboard & Submission Index:** [`docs/video/18_DEMO_VOICEOVER_SCRIPT.md`](./docs/video/18_DEMO_VOICEOVER_SCRIPT.md), [`docs/video/19_DEMO_VISUAL_STORYBOARD.md`](./docs/video/19_DEMO_VISUAL_STORYBOARD.md), [`docs/video/20_RECORDING_AND_EDITING_GUIDE.md`](./docs/video/20_RECORDING_AND_EDITING_GUIDE.md), [`deliverables/SentinAI_Guardian_Pitch_Deck.pptx`](./deliverables/SentinAI_Guardian_Pitch_Deck.pptx), [`deliverables/README_SUBMISSION.md`](./deliverables/README_SUBMISSION.md)
+- **Final Competition Submission & Video Production Package (`docs/submission/`):**
+  - [`FINAL_OFFICIAL_REQUIREMENTS.md`](./docs/submission/FINAL_OFFICIAL_REQUIREMENTS.md)
+  - [`VIDEO_FINAL_SCRIPT.md`](./docs/submission/VIDEO_FINAL_SCRIPT.md)
+  - [`VIDEO_RECORDING_SHOTLIST.md`](./docs/submission/VIDEO_RECORDING_SHOTLIST.md)
+  - [`VIDEO_EDITING_TIMELINE.md`](./docs/submission/VIDEO_EDITING_TIMELINE.md)
+  - [`VIDEO_CAPTIONS_EN.srt`](./docs/submission/VIDEO_CAPTIONS_EN.srt)
+  - [`VIDEO_OWNER_INSTRUCTIONS_BN.md`](./docs/submission/VIDEO_OWNER_INSTRUCTIONS_BN.md)
+  - [`FINAL_PACKAGE_MANIFEST.md`](./docs/submission/FINAL_PACKAGE_MANIFEST.md)
+  - [`HOW_TO_SUBMIT_BN.md`](./docs/submission/HOW_TO_SUBMIT_BN.md)

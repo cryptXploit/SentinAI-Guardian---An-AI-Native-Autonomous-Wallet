@@ -17,7 +17,7 @@ const SLIDES: SlideSpec[] = [
       '2026 Shenzhen International FinTech Competition — International Track (Topic F)',
       'Speak naturally in English, Bengali (বাংলা), or Banglish — execute safely on Ethereum Sepolia',
       'Strict Privilege Separation: Probabilistic AI Intent Parsing vs. Deterministic Policy Enforcement',
-      'Confirmed On-Chain Sepolia Execution: Tx 0xfe315950...88da (Block #11935960 / 0xb620d8)',
+      'Confirmed On-Chain Sepolia Execution: Tx 0xfe315950...88da (0.00001 ETH · Block #11935960)',
     ],
     footer: 'Slide 1 · Executive Positioning · Topic F: Agent Wallet / Autonomous On-chain Wallet',
   },
@@ -91,7 +91,7 @@ const SLIDES: SlideSpec[] = [
     title: 'Verified Live Sepolia Blockchain & Test Evidence',
     subtitle: 'Real On-Chain Execution & 354 Automated Tests Passing',
     bullets: [
-      'Confirmed Sepolia Transaction: 0xfe315950001536c94f363c6e7b6522eef69a2b874d958544dd91efe5ee8388da',
+      'Confirmed Sepolia Tx: 0xfe315950001536c94f363c6e7b6522eef69a2b874d958544dd91efe5ee8388da (0.00001 ETH / 10^13 wei)',
       'Block #11935960 (0xb620d8 · 2026-10-17T18:55:12Z) · Proposal ID: 7540a5f1-dcb4-4797-b46a-13ec74fa96d9 (CONFIRMED)',
       'EIP-2780 Gas Floor Engineering: 12,000 simulated warm self-transfer gas vs. 21,000 broadcast gas floor enforced',
       'Comprehensive QA Gate: 354/354 Vitest tests (33 suites) + 12/12 Headless Chrome E2E browser flows passing',

@@ -64,11 +64,11 @@
 
 1. `#policies` সেকশনে স্ক্রল করুন (**Deterministic Policy Firewall Configuration**)।
 2. এখানে আপনি পরিবর্তন করতে পারবেন:
-   - **Per-Transaction Limit (ETH)** (যেমন `0.5 ETH` থেকে কমিয়ে `0.05 ETH` করা)
-   - **Daily Limit (ETH)** (যেমন `2.0 ETH`)
-   - **Trusted Recipients (`alias` → `0x...` address)**
-   - **Approved ERC-20 Spenders**
-3. **"Save Policy Configuration"** ক্লিক করলে সেটি সরাসরি SQLite ডেটাবেসে (`user_policies` ও `policy_audit_logs` টেবিলে) সংরক্ষিত হবে এবং পেজ রিলোড করলেও অক্ষুণ্ণ থাকবে।
+   - **Max ETH Transfer Limit (`maxTransferAmountETH`)** (যেমন ডিফল্ট `1.0 ETH` থেকে কমিয়ে `0.05 ETH` করা)
+   - **Unlimited ERC-20 Approval (`allowUnlimitedApproval`)** (`false` / নিষিদ্ধ রাখা)
+   - **Trusted Contacts (`trustedContacts`: `alias` → `0x...` address)**
+   - **Per-Token Approval Policies (`tokenApprovalPolicies`: অনুমোদিত স্পেন্ডার ও সর্বোচ্চ ক্যাপ)**
+3. **"Save Policy Configuration"** ক্লিক করলে সেটি সরাসরি SQLite ডেটাবেসে (`user_policies` ও `policy_audit_log` টেবিলে) সংরক্ষিত হবে এবং পেজ রিলোড করলেও অক্ষুণ্ণ থাকবে।
 
 ---
 
