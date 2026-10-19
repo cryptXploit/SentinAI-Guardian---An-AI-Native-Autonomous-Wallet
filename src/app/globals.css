@@ -1,38 +1,48 @@
 @import "tailwindcss";
 
 :root {
-  /* Premium dark mode financial theme */
-  --background: #090a0f; /* Midnight navy / graphite */
-  --foreground: #f3f4f6; /* Off-white text */
-  --surface: #13151f; /* Lighter navy for cards/panels */
-  --surface-hover: #1e2130; 
-  --border: #232738;
-  
-  --accent-blue: #3b82f6; /* Electric blue */
-  --accent-violet: #8b5cf6; /* Violet */
-  --success: #10b981; /* Emerald */
-  --warning: #f59e0b; /* Muted amber */
-  --danger: #ef4444; /* Muted red */
-  
+  /* Modern AI FinTech Command Center — Design Tokens */
+  --background: #070a12;        /* Deep midnight navy canvas */
+  --foreground: #f3f6fc;        /* High-contrast crisp off-white */
+  --surface: #0e1320;           /* Primary card surface */
+  --surface-elevated: #141b2d;  /* Elevated modal / inner card surface */
+  --surface-hover: #1a233a;     /* Interactive hover surface */
+  --border: #1e293b;            /* Subtle structural border */
+  --border-strong: #334155;     /* Emphasized border */
+
+  /* Semantic Intelligence & Security Palette */
+  --accent-blue: #3b82f6;       /* Primary action & network intelligence */
+  --accent-violet: #8b5cf6;     /* AI interpretation & semantic analysis */
+  --success: #10b981;           /* Verified safe / policy compliant / confirmed */
+  --warning: #f59e0b;           /* Elevated risk / pending reconciliation */
+  --danger: #ef4444;            /* Policy blocked / security violation */
+
+  /* Typography */
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
   --color-surface-hover: var(--surface-hover);
   --color-border: var(--border);
-  
+  --color-border-strong: var(--border-strong);
+
   --color-accent-blue: var(--accent-blue);
   --color-accent-violet: var(--accent-violet);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
-  
+
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
@@ -40,9 +50,31 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
-/* Tabular numbers for finance */
+/* Tabular numbers for financial precision */
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+/* Accessible keyboard focus ring */
+:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

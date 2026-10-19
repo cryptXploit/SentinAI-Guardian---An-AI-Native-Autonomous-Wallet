@@ -644,10 +644,14 @@ export function resolveRecoveryJournalPath(): string {
   if (process.env.SENTINAI_RECOVERY_JOURNAL_PATH) {
     return process.env.SENTINAI_RECOVERY_JOURNAL_PATH;
   }
-  if (process.env.VITEST === 'true' || process.env.NODE_ENV === 'test') {
+  const dbPath = resolveDatabasePath();
+  if (
+    process.env.VITEST === 'true' ||
+    process.env.NODE_ENV === 'test' ||
+    dbPath === ':memory:'
+  ) {
     return path.join(os.tmpdir(), `sentinai-recovery-journal-${process.pid}.json`);
   }
-  const dbPath = resolveDatabasePath();
   return `${dbPath}.recovery-journal.json`;
 }
 

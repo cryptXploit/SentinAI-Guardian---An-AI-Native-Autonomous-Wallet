@@ -221,7 +221,7 @@ export async function prepareTransactionIntent(command: string): Promise<Prepare
   let currentStep = "INTENT_PARSING";
 
   try {
-    // Step 1: Parse Intent
+    // Step 1: Parse Intent (uses parseIntentWithProvenance under the hood in production; mockable in unit tests)
     const intent = await parseIntent(command);
     const aiProvenance = getLastParsedProvenance();
     const aiProviderUsed = getLastActiveProviderName();

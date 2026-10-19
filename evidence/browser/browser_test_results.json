@@ -1,0 +1,81 @@
+{
+  "executedAt": "2026-10-19T08:07:23.107Z",
+  "browser": "Google Chrome Headless (CDP)",
+  "appUrl": "http://localhost:3000",
+  "allPassed": true,
+  "pageErrors": [],
+  "results": [
+    {
+      "step": "1. Unauthenticated Login Gate Render",
+      "passed": true,
+      "details": "Rendered SentinAI Guardian Operator Password login form",
+      "screenshot": "evidence/browser/01_login_gate.png"
+    },
+    {
+      "step": "2. Invalid Password Rejected Fail-Closed",
+      "passed": true,
+      "details": "Displayed Invalid credentials alert and kept console locked",
+      "screenshot": "evidence/browser/02_invalid_login_rejected.png"
+    },
+    {
+      "step": "3. Valid Operator Login & Command Center Load",
+      "passed": true,
+      "details": "Authenticated via HMAC-SHA256 session cookie and loaded live Sepolia balance & telemetry",
+      "screenshot": "evidence/browser/03_authenticated_command_center_1440.png"
+    },
+    {
+      "step": "4. Responsive Layout Audit (1440px, 768px, 375px)",
+      "passed": true,
+      "details": "tabletNoOverflow=true, mobileNoOverflow=true",
+      "screenshot": "evidence/ui/mobile_375_overview.png"
+    },
+    {
+      "step": "5. Live Balance Query (\"Show my balance\")",
+      "passed": true,
+      "details": "Rendered Live Wallet Intelligence card with READ-ONLY badge and Sepolia balances",
+      "screenshot": "evidence/browser/04_live_balance_query.png"
+    },
+    {
+      "step": "6. Valid Safe ETH Transfer (\"Send 0.0001 ETH to alice\")",
+      "passed": true,
+      "details": "Live AI parsed intent, passed policy & simulation, and rendered Pre-Execution Transaction Review gate",
+      "screenshot": "evidence/browser/05_safe_eth_transfer_prepared.png"
+    },
+    {
+      "step": "7. Multilingual Native Bengali Prompt (\"এলিস কে ০.০০০১ ইথ পাঠাও\")",
+      "passed": true,
+      "details": "Live AI parsed Bengali transfer into 0.0001 ETH to Alice and passed all 5 pre-sign gates",
+      "screenshot": "evidence/browser/06_bengali_intent_prepared.png"
+    },
+    {
+      "step": "8. Excessive Amount Policy Block (\"Send 5 ETH to alice\")",
+      "passed": true,
+      "details": "Blocked by deterministic policy engine (EXCEEDS_PER_TX_LIMIT) with NON-EXECUTABLE PROPOSAL badge",
+      "screenshot": "evidence/browser/07_excessive_spend_blocked.png"
+    },
+    {
+      "step": "9. Negation Safety Filter (\"Do not send 0.1 ETH to alice\")",
+      "passed": true,
+      "details": "Halted at INTENT_VALIDATION with CONTRADICTORY_INSTRUCTION before transaction builder",
+      "screenshot": "evidence/browser/08_negation_blocked.png"
+    },
+    {
+      "step": "10. Topic F Threat Fixture Isolation (\"Phishing: 1M USDC Approval\")",
+      "passed": true,
+      "details": "Displayed DEMO / SIMULATED and NON-EXECUTABLE DEMO badges; no signing button rendered",
+      "screenshot": "evidence/browser/09_phishing_fixture_demo.png"
+    },
+    {
+      "step": "11. Proposal History & Confirmed Sepolia Tx Display",
+      "passed": true,
+      "details": "Verified CONFIRMED Sepolia transaction 0xfe315950... and Policy Management panel in DOM",
+      "screenshot": "evidence/browser/10_policy_editor_and_history.png"
+    },
+    {
+      "step": "12. Architecture & Trust Boundary Inspector Render",
+      "passed": true,
+      "details": "Rendered 6-stage pipeline architecture and 4 core security invariants",
+      "screenshot": "evidence/ui/architecture_panel.png"
+    }
+  ]
+}

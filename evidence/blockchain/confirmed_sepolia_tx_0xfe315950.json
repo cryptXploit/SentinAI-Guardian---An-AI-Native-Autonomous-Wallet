@@ -1,0 +1,153 @@
+{
+  "verifiedAt": "2026-10-19T07:38:30.328Z",
+  "archiveRpcUsedForHistoricalReceipt": "https://sepolia.drpc.org",
+  "network": {
+    "name": "Ethereum Sepolia Testnet",
+    "chainId": 11155111,
+    "currentBlockNumber": "11946746"
+  },
+  "onChainTransaction": {
+    "transactionHash": "0xfe315950001536c94f363c6e7b6522eef69a2b874d958544dd91efe5ee8388da",
+    "blockNumber": "11935960",
+    "blockHash": "0xa4a30c2a898ded8693e281026cf20483a1341512eb86950900993ceb4bcbfc8a",
+    "blockTimestamp": "2026-10-17T18:55:12.000Z",
+    "transactionIndex": 85,
+    "from": "0xaeb8387cb3fda31d059ac13a42fb201fcb3a2148",
+    "to": "0xaeb8387cb3fda31d059ac13a42fb201fcb3a2148",
+    "valueWei": "10000000000000",
+    "valueEth": "0.00001",
+    "inputData": "0x",
+    "nonce": 0,
+    "gasLimit": "21000",
+    "gasUsed": "12000",
+    "effectiveGasPriceWei": "136",
+    "effectiveGasPriceGwei": "0.000000136",
+    "totalFeeWei": "1632000",
+    "totalFeeEth": "0.000000000001632",
+    "receiptStatus": "success",
+    "txType": "eip1559",
+    "explorerUrl": "https://sepolia.etherscan.io/tx/0xfe315950001536c94f363c6e7b6522eef69a2b874d958544dd91efe5ee8388da"
+  },
+  "sqliteDatabaseRecord": {
+    "id": "7540a5f1-dcb4-4797-b46a-13ec74fa96d9",
+    "ownerId": "operator-1",
+    "status": "CONFIRMED",
+    "provenance": "LIVE_VERIFIED",
+    "isExecutable": true,
+    "digest": "0xce15d586c721266f52799b91c8a5ad043d9e89f90190bf02fe379f35d486b115",
+    "txHash": "0xfe315950001536c94f363c6e7b6522eef69a2b874d958544dd91efe5ee8388da",
+    "createdAt": "2026-10-17 18:54:46",
+    "authorizedAt": "2026-10-17T18:55:08.166Z",
+    "expiresAt": "2026-10-17T19:09:46.436Z",
+    "iipData": {
+      "proofDigest": "0xce15d586c721266f52799b91c8a5ad043d9e89f90190bf02fe379f35d486b115",
+      "proofId": "0xce15d586c721266f52799b91c8a5ad043d9e89f90190bf02fe379f35d486b115",
+      "intent": {
+        "action": "TRANSFER",
+        "asset": "ETH",
+        "amount": "0.00001",
+        "recipientAlias": "alice"
+      },
+      "candidate": {
+        "to": "0xaeb8387cB3FDa31D059Ac13a42fb201fCb3A2148",
+        "value": {
+          "__bigint__": "10000000000000"
+        },
+        "chainId": 11155111
+      },
+      "policyDecision": {
+        "status": "ALLOW",
+        "reason": "Policy requirements met",
+        "resolvedAddress": "0xaeb8387cB3FDa31D059Ac13a42fb201fCb3A2148"
+      },
+      "simulation": {
+        "success": true,
+        "gasEstimated": {
+          "__bigint__": "12000"
+        },
+        "simulatedFrom": "0xaeb8387cB3FDa31D059Ac13a42fb201fCb3A2148",
+        "timestamp": "2026-10-17T18:54:39.905Z"
+      },
+      "timestamp": "2026-10-17T18:54:46.435Z",
+      "finalDecision": "ALLOW_FOR_AUTHORIZATION"
+    }
+  },
+  "databaseSummary": {
+    "totalProposals": 6,
+    "proposals": [
+      {
+        "id": "7540a5f1-dcb4-4797-b46a-13ec74fa96d9",
+        "owner_id": "operator-1",
+        "status": "CONFIRMED",
+        "provenance": "LIVE_VERIFIED",
+        "is_executable": 1,
+        "digest": "0xce15d586c721266f52799b91c8a5ad043d9e89f90190bf02fe379f35d486b115",
+        "tx_hash": "0xfe315950001536c94f363c6e7b6522eef69a2b874d958544dd91efe5ee8388da",
+        "created_at": "2026-10-17 18:54:46",
+        "authorized_at": "2026-10-17T18:55:08.166Z",
+        "expires_at": "2026-10-17T19:09:46.436Z"
+      },
+      {
+        "id": "d9389711-7895-41f7-b08e-462298a7153d",
+        "owner_id": "operator-1",
+        "status": "PREPARED",
+        "provenance": "LIVE_VERIFIED",
+        "is_executable": 1,
+        "digest": "0x2fa0d386833fe5385ac772f3a780fdd63c1ad124a34409c630dd343491800902",
+        "tx_hash": null,
+        "created_at": "2026-10-13 15:02:36",
+        "authorized_at": null,
+        "expires_at": "2026-10-13T15:17:36.851Z"
+      },
+      {
+        "id": "7aec540f-f394-4377-86bb-b613f5a70129",
+        "owner_id": "operator-1",
+        "status": "FAILED",
+        "provenance": "LIVE_VERIFIED",
+        "is_executable": 1,
+        "digest": "0x2fa0d386833fe5385ac772f3a780fdd63c1ad124a34409c630dd343491800902",
+        "tx_hash": null,
+        "created_at": "2026-10-13 15:02:13",
+        "authorized_at": "2026-10-13T15:02:24.478Z",
+        "expires_at": "2026-10-13T15:17:13.602Z"
+      },
+      {
+        "id": "0cebcb71-6d0e-47dd-b4f5-5875058b53d2",
+        "owner_id": "operator-1",
+        "status": "PREPARED",
+        "provenance": "LIVE_VERIFIED",
+        "is_executable": 1,
+        "digest": "0xf394bf422f19d93e138dd51b8c53f2061bbbef15adc2eb6797090e4fb5a01822",
+        "tx_hash": null,
+        "created_at": "2026-10-13 15:00:35",
+        "authorized_at": null,
+        "expires_at": "2026-10-13T15:15:35.255Z"
+      },
+      {
+        "id": "2bde6ee6-3944-4c1a-ba40-e8df68a5bbf0",
+        "owner_id": "operator-1",
+        "status": "PREPARED",
+        "provenance": "UNVERIFIED",
+        "is_executable": 0,
+        "digest": "0x1dff1086b4ad839567e727dfc974531fb7b98f86477de978b26450a6c3fd94ef",
+        "tx_hash": null,
+        "created_at": "2026-10-13 15:00:01",
+        "authorized_at": null,
+        "expires_at": "2026-10-13T15:15:01.573Z"
+      },
+      {
+        "id": "98192423-09d6-4c41-9aa9-8b540e689e1c",
+        "owner_id": "operator-1",
+        "status": "FAILED",
+        "provenance": "LIVE_VERIFIED",
+        "is_executable": 1,
+        "digest": "0xf394bf422f19d93e138dd51b8c53f2061bbbef15adc2eb6797090e4fb5a01822",
+        "tx_hash": null,
+        "created_at": "2026-10-13 13:33:50",
+        "authorized_at": "2026-10-13T13:35:00.800Z",
+        "expires_at": "2026-10-13T13:48:50.329Z"
+      }
+    ],
+    "policyAuditLogsCount": 0
+  }
+}

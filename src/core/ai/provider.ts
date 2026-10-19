@@ -1,5 +1,13 @@
+import dns from 'dns';
 import { GoogleGenAI, Type } from '@google/genai';
 import { ParsedIntentSchema, ParsedIntent } from '../domain/schemas';
+
+// Prevent Node v24 undici dual-stack IPv6 connection stalls on Windows when calling api.groq.com
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch {
+  // Ignore if running in an environment without Node dns module
+}
 
 export const MAX_COMMAND_LENGTH = 500;
 
@@ -293,6 +301,22 @@ export class GeminiIntentProvider implements IntentAIProvider {
       const rawJson = JSON.parse(responseText);
 
       const parsed = ParsedIntentSchema.parse(rawJson);
+      if (
+        (parsed.action === 'TRANSFER' || parsed.action === 'APPROVE' || parsed.action === 'SWAP') &&
+        (isTransactionNegationOrCancellation(command) ||
+          normalizeBengaliInput(command).isNegated ||
+          isAdversarialPolicyOverride(command))
+      ) {
+        _lastParsedProvenance = 'LIVE_AI';
+        _lastActiveProviderName = 'gemini';
+        _lastActiveModelName = this.modelName;
+        return {
+          action: 'UNKNOWN',
+          asset: 'ETH',
+          amount: '0',
+          recipientAlias: '',
+        };
+      }
       _lastParsedProvenance = 'LIVE_AI';
       _lastActiveProviderName = 'gemini';
       _lastActiveModelName = this.modelName;
@@ -407,10 +431,12 @@ export class GroqIntentProvider implements IntentAIProvider {
 
       const parsed = ParsedIntentSchema.parse(rawJson);
 
-      // Defense-in-depth: never allow a contradictory/negated command to produce a state-changing intent
+      // Defense-in-depth: never allow a contradictory/negated or policy-override command to produce a state-changing intent
       if (
         (parsed.action === 'TRANSFER' || parsed.action === 'APPROVE' || parsed.action === 'SWAP') &&
-        (isTransactionNegationOrCancellation(command) || normalizeBengaliInput(command).isNegated)
+        (isTransactionNegationOrCancellation(command) ||
+          normalizeBengaliInput(command).isNegated ||
+          isAdversarialPolicyOverride(command))
       ) {
         _lastParsedProvenance = 'LIVE_AI';
         _lastActiveProviderName = 'groq';
@@ -545,6 +571,33 @@ export function isTransactionNegationOrCancellation(command: string): boolean {
   return false;
 }
 
+export function isAdversarialPolicyOverride(command: string): boolean {
+  const lower = command.toLowerCase();
+  return (
+    lower.includes('jailbreak') ||
+    lower.includes('disregard previous') ||
+    lower.includes('system directive') ||
+    lower.includes('system override') ||
+    lower.includes('private_key') ||
+    lower.includes('seed phrase') ||
+    lower.includes('pre-approved by admin') ||
+    lower.includes('drain wallet') ||
+    lower.includes('guardrail') ||
+    lower.includes('developer mode') ||
+    lower.includes('shell command') ||
+    lower.includes('/etc/passwd') ||
+    lower.includes('ignore the policy') ||
+    lower.includes('ignore policy') ||
+    lower.includes('ignore all policies') ||
+    lower.includes('ignore policies') ||
+    lower.includes('bypass policy') ||
+    lower.includes('bypass all policies') ||
+    lower.includes('ignore all safety') ||
+    lower.includes('disable verification') ||
+    lower.includes('disable security')
+  );
+}
+
 export class MockIntentProvider implements IntentAIProvider {
   readonly name = 'mock';
   private _lastLatencyMs?: number;
@@ -597,28 +650,12 @@ export class MockIntentProvider implements IntentAIProvider {
     // 3. Adversarial & Out-of-Domain Detection
     // Unconditional rejection for jailbreaks, prompt leaks, system overrides, translation attacks, and drain scams
     if (
+      isAdversarialPolicyOverride(command) ||
       lower.startsWith('translate ') ||
       lower.includes('translate to') ||
-      lower.includes('jailbreak') ||
-      lower.includes('disregard previous') ||
       lower.includes('you are now') ||
-      lower.includes('system directive') ||
-      lower.includes('system override') ||
-      lower.includes('private_key') ||
-      lower.includes('seed phrase') ||
-      lower.includes('pre-approved by admin') ||
-      lower.includes('drain wallet') ||
       lower.includes('drain ') ||
-      lower.includes('guardrail') ||
-      lower.includes('developer mode') ||
-      lower.includes('shell command') ||
-      lower.includes('/etc/passwd') ||
-      lower.includes('cat /') ||
-      lower.includes('ignore the policy') ||
-      lower.includes('ignore policy') ||
-      lower.includes('ignore all safety') ||
-      lower.includes('disable verification') ||
-      lower.includes('disable security')
+      lower.includes('cat /')
     ) {
       this._lastLatencyMs = Date.now() - startTime;
       _lastParsedProvenance = 'DETERMINISTIC_FALLBACK';

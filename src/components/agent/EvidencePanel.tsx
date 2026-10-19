@@ -25,6 +25,7 @@ interface EvidencePanelProps {
   onAuthorize?: (proposalId: string) => Promise<void>;
   onCancel?: () => void;
   isAuthorizing?: boolean;
+  walletAddress?: string;
 }
 
 export default function EvidencePanel({
@@ -33,8 +34,10 @@ export default function EvidencePanel({
   onAuthorize,
   onCancel,
   isAuthorizing = false,
+  walletAddress,
 }: EvidencePanelProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showPreExecutionReview, setShowPreExecutionReview] = useState(true);
 
   if (!prepareResult && !executionResult) {
     return null;
@@ -313,7 +316,7 @@ export default function EvidencePanel({
 
       {/* 2. Phase 1 Authorization Gate (Live Verified Proposals ONLY) */}
       {isReadyForAuth && proposalId && summary && (
-        <div className="border border-emerald-500/30 bg-surface rounded-xl overflow-hidden shadow-lg p-6">
+        <div className="border border-emerald-500/30 bg-surface rounded-xl overflow-hidden shadow-lg p-6 space-y-5">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
@@ -321,16 +324,26 @@ export default function EvidencePanel({
                 <h4 className="font-semibold text-foreground text-sm">
                   Human-in-the-Loop Execution Gate
                 </h4>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  PREPARED · READY FOR SIGNING
+                </span>
               </div>
               <p className="text-xs text-gray-400">
-                All deterministic policy checks, calldata verifications, and Sepolia simulations passed. Explicit authorization required before blockchain broadcast.
+                All deterministic policy checks, calldata verifications, and Sepolia simulations passed. Explicit human authorization is required before blockchain broadcast.
               </p>
               <div className="text-[11px] font-mono text-gray-500 pt-1">
                 Proposal ID: <span className="text-accent-blue">{proposalId}</span>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setShowPreExecutionReview((prev) => !prev)}
+                className="px-3.5 py-2 bg-background border border-border text-gray-300 font-medium rounded-lg hover:bg-surface-hover hover:text-white transition-colors text-xs"
+              >
+                {showPreExecutionReview ? "Hide Review Card" : "Review Transaction"}
+              </button>
               {onCancel && (
                 <button
                   type="button"
@@ -361,6 +374,66 @@ export default function EvidencePanel({
               </button>
             </div>
           </div>
+
+          {showPreExecutionReview && (
+            <div className="border-t border-border/60 pt-4 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                <div className="p-3 rounded-lg bg-background border border-border">
+                  <span className="text-gray-500 uppercase tracking-wider font-semibold text-[10px] block">
+                    Sender Wallet
+                  </span>
+                  <span className="font-mono text-gray-200 mt-1 block truncate" title={walletAddress || "Configured Agent Signer"}>
+                    {walletAddress || "Owner Agent Wallet"}
+                  </span>
+                </div>
+                <div className="p-3 rounded-lg bg-background border border-border">
+                  <span className="text-gray-500 uppercase tracking-wider font-semibold text-[10px] block">
+                    Verified Recipient ({summary.recipientAlias})
+                  </span>
+                  <span className="font-mono text-gray-200 mt-1 block truncate" title={summary.recipientAddress}>
+                    {summary.recipientAddress}
+                  </span>
+                </div>
+                <div className="p-3 rounded-lg bg-background border border-border">
+                  <span className="text-gray-500 uppercase tracking-wider font-semibold text-[10px] block">
+                    Network &amp; Asset Amount
+                  </span>
+                  <span className="font-semibold text-emerald-400 mt-1 block tabular-nums">
+                    {summary.amount} {summary.asset} · Sepolia (11155111)
+                  </span>
+                </div>
+                <div className="p-3 rounded-lg bg-background border border-border">
+                  <span className="text-gray-500 uppercase tracking-wider font-semibold text-[10px] block">
+                    Estimated Gas &amp; Broadcast Floor
+                  </span>
+                  <span className="font-mono text-gray-200 mt-1 block">
+                    Sim: {summary.gasEstimated || "12000"} · Floor: 21000 gas
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                <div className="p-3 rounded-lg bg-emerald-950/15 border border-emerald-500/20">
+                  <span className="text-emerald-400/90 font-semibold block">Policy Engine Verdict</span>
+                  <span className="text-gray-300 mt-0.5 block">
+                    ALLOW — Within Per-Tx Limit &amp; 24h Rolling Spend Cap
+                  </span>
+                </div>
+                <div className="p-3 rounded-lg bg-emerald-950/15 border border-emerald-500/20">
+                  <span className="text-emerald-400/90 font-semibold block">Sepolia Pre-Flight Simulation</span>
+                  <span className="text-gray-300 mt-0.5 block">
+                    PASS — Calldata &amp; Balance Verified On-Chain
+                  </span>
+                </div>
+                <div className="p-3 rounded-lg bg-blue-950/15 border border-accent-blue/20">
+                  <span className="text-accent-blue font-semibold block">What Happens After Approval</span>
+                  <span className="text-gray-300 mt-0.5 block">
+                    Gate 6.5 Revalidation → CAS Lock → Journal Write → Sepolia Broadcast
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

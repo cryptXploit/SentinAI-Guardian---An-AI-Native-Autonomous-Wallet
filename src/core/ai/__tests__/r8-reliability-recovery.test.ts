@@ -148,20 +148,20 @@ describe('Milestone R8 — Critical Reliability, AI Intelligence & Security Reco
 
   describe('R8.5 — Security & Constant-Time Verification', () => {
     it('R8-C1: Validates correct password', () => {
-      expect(verifyPasswordConstantTime('guardian-operator-2026', 'guardian-operator-2026')).toBe(true);
+      expect(verifyPasswordConstantTime('mock-unit-test-secret-alpha', 'mock-unit-test-secret-alpha')).toBe(true);
     });
 
     it('R8-C2: Rejects incorrect password of same length', () => {
-      expect(verifyPasswordConstantTime('guardian-operator-2025', 'guardian-operator-2026')).toBe(false);
+      expect(verifyPasswordConstantTime('mock-unit-test-secret-bravo', 'mock-unit-test-secret-alpha')).toBe(false);
     });
 
     it('R8-C3: Rejects incorrect password of different length', () => {
-      expect(verifyPasswordConstantTime('wrong', 'guardian-operator-2026')).toBe(false);
+      expect(verifyPasswordConstantTime('wrong', 'mock-unit-test-secret-alpha')).toBe(false);
     });
 
     it('R8-C4: Handles empty or invalid inputs safely', () => {
-      expect(verifyPasswordConstantTime('', 'guardian-operator-2026')).toBe(false);
-      expect(verifyPasswordConstantTime(null as unknown as string, 'guardian-operator-2026')).toBe(false);
+      expect(verifyPasswordConstantTime('', 'mock-unit-test-secret-alpha')).toBe(false);
+      expect(verifyPasswordConstantTime(null as unknown as string, 'mock-unit-test-secret-alpha')).toBe(false);
     });
   });
 
