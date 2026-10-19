@@ -1,7 +1,7 @@
 # Phase 5: Final Submission Package Manifest & Cryptographic Checksums
 
-**Project:** SentinAI Guardian — An AI-Native Autonomous Wallet with Deterministic Risk Control  
-**Competition:** 2026 Shenzhen International FinTech Competition — International Track (Topic F: Agent Wallet / Autonomous On-chain Wallet)  
+**Project:** SentinAI Guardian Ã¢â‚¬â€ An AI-Native Autonomous Wallet with Deterministic Risk Control  
+**Competition:** 2026 Shenzhen International FinTech Competition Ã¢â‚¬â€ International Track (Topic F: Agent Wallet / Autonomous On-chain Wallet)  
 **Repository:** `https://github.com/cryptXploit/SentinAI-Guardian---An-AI-Native-Autonomous-Wallet`  
 **Manifest Generated:** October 19, 2026  
 
@@ -11,10 +11,10 @@
 
 | File Name / Relative Path | Byte Size | SHA-256 Checksum | Classification | Validation Status |
 |---|---:|---|---|---|
-| [`deliverables/SentinAI_Guardian_Submission_Package.zip`](../../deliverables/SentinAI_Guardian_Submission_Package.zip) | `2,481,203` (`2.48 MB`) | `4bea2ba8249bdf796479609d939f812cc750abb967a129bcb58b688f44d9ba1b` | **Mandatory** (Complete Source, Technical Docs, Security Audit, Evidence & Pitch Deck Archive — `177` entries) | **VALIDATED** (`177/177` entries decompressed in memory; `0` secrets, `0` DB files) |
+| [`deliverables/SentinAI_Guardian_Submission_Package.zip`](../../deliverables/SentinAI_Guardian_Submission_Package.zip) | `2,494,186` (`2.49 MB`) | `8df872764f6925162165f70be93fefa2851958c428e7194b66d16cba2d461700` | **Mandatory** (Complete Source, Technical Docs, Security Audit, Evidence, Manifest & Pitch Deck Archive — `179` entries) | **VALIDATED** (`179/179` entries decompressed in memory; `0` secrets, `0` DB files) |
 | [`deliverables/SentinAI_Guardian_Pitch_Deck.pptx`](../../deliverables/SentinAI_Guardian_Pitch_Deck.pptx) | `25,293` (`25.3 KB`) | `e22c868c53754415c49cedd9849a4138739a9a26bbfa7e474c824be0f4bc5268` | **Mandatory** (12-Slide 16:9 OpenXML Presentation Deck) | **VALIDATED** (`12/12` slide XMLs verified; includes `0.00001 ETH` Sepolia Tx proof) |
-| `deliverables/SentinAI_Guardian_Demo_Video.mp4` *(To be recorded by Owner)* | `N/A` | `N/A (Not yet recorded)` | **Mandatory** (2–3 Min 1080p English Prototype Walkthrough Video) | **MISSING** (Script, Shotlist, Timeline, `.srt` Captions & Bengali Guide **READY**) |
-| *Team Registration Form & Passport Bio Pages* *(Handled privately by Owner)* | `Excluded from Git` | `Excluded from Git (Private Identity Documents)` | **Mandatory** (2–5 Full-Time Overseas University Students, $\ge 60\%$ Non-Chinese) | **UNVERIFIED / OWNER PRIVATE CHANNEL** (Must be emailed directly to `wangyr@pbcsf.tsinghua.edu.cn`) |
+| `deliverables/SentinAI_Guardian_Demo_Video.mp4` *(To be recorded by Owner)* | `N/A` | `N/A (Not yet recorded)` | **Mandatory** (2Ã¢â‚¬â€œ3 Min 1080p English Prototype Walkthrough Video) | **MISSING** (Script, Shotlist, Timeline, `.srt` Captions & Bengali Guide **READY**) |
+| *Team Registration Form & Passport Bio Pages* *(Handled privately by Owner)* | `Excluded from Git` | `Excluded from Git (Private Identity Documents)` | **Mandatory** (2Ã¢â‚¬â€œ5 Full-Time Overseas University Students, $\ge 60\%$ Non-Chinese) | **UNVERIFIED / OWNER PRIVATE CHANNEL** (Must be emailed directly to `wangyr@pbcsf.tsinghua.edu.cn`) |
 
 ---
 
@@ -29,9 +29,10 @@
 | [`docs/submission/VIDEO_FINAL_SCRIPT.md`](./VIDEO_FINAL_SCRIPT.md) | `9,093` | `fde8b9113ef7caf0bd72eb8ab24adf6841280ace90fdb247b6ce2ff48ab51ff5` | **Mandatory** (3:00 English Demo Script) | **VALIDATED** |
 | [`docs/submission/VIDEO_RECORDING_SHOTLIST.md`](./VIDEO_RECORDING_SHOTLIST.md) | `6,496` | `0553d080e1ce015eb4f1ed905dd761b9d3edef7c98264c3d135765e7569544e4` | **Mandatory** (Scene-by-Scene Shotlist) | **VALIDATED** |
 | [`docs/submission/VIDEO_EDITING_TIMELINE.md`](./VIDEO_EDITING_TIMELINE.md) | `5,736` | `1fca08befd9514dc6e06c36b2788c73184bd5d74ac265d050196e9adb98dae59` | **Mandatory** (Editing & FFmpeg/GUI Guide) | **VALIDATED** |
-| [`docs/submission/VIDEO_CAPTIONS_EN.srt`](./VIDEO_CAPTIONS_EN.srt) | `3,801` | `ca836eedaef054483ff1e769df94e0e9803bd2d2235121fc196148ce759bd1cf` | **Mandatory** (SubRip English Captions `0:00–3:00`) | **VALIDATED** |
-| [`docs/submission/VIDEO_OWNER_INSTRUCTIONS_BN.md`](./VIDEO_OWNER_INSTRUCTIONS_BN.md) | `17,640` | `6a03ad4f45c8791758a8eb729d22f3ffdf33f213e6ea6c080f227f951e49f255` | **Optional / Owner Guide** (Bengali Recording Guide) | **VALIDATED** |
+| [`docs/submission/VIDEO_CAPTIONS_EN.srt`](./VIDEO_CAPTIONS_EN.srt) | `3,801` | `ca836eedaef054483ff1e769df94e0e9803bd2d2235121fc196148ce759bd1cf` | **Mandatory** (SubRip English Captions `0:00Ã¢â‚¬â€œ3:00`) | **VALIDATED** |
+| [`docs/submission/VIDEO_OWNER_INSTRUCTIONS_BN.md`](./VIDEO_OWNER_INSTRUCTIONS_BN.md) | `19,249` | `e7fb81a49dc9cc29445f1ece6b358879dc57309f55efa1e7e91ff594e14931b9` | **Optional / Owner Guide** (Bengali Recording Guide) | **VALIDATED** |
 | [`docs/submission/HOW_TO_SUBMIT_BN.md`](./HOW_TO_SUBMIT_BN.md) | `17,722` | `483b2d3a2ad16f7844004c11775dad217b8a5801b6fc839327a3a2e1bebcc6c6` | **Optional / Owner Guide** (Bengali Submission Guide) | **VALIDATED** |
+| [`docs/submission/FINAL_OWNER_ACTIONS_BN.md`](./FINAL_OWNER_ACTIONS_BN.md) | `21,627` | `226f5b5b3cbed9800d67fcac5fde718e27f385a5c49a3af88488d3f03eec77c4` | **Optional / Owner Guide** (Final Handoff Checklist Parts Aâ€“D) | **VALIDATED** |
 | [`docs/competition/00_OFFICIAL_REQUIREMENTS_MATRIX.md`](../competition/00_OFFICIAL_REQUIREMENTS_MATRIX.md) | `10,753` | `e21df4edb75b06e6a80390753b02e29ad0deb78e281c6b52f54fd4b73c9b3a4a` | **Mandatory** (Competition Compliance Matrix) | **VALIDATED** |
 | [`docs/presentation/16_PITCH_DECK_CONTENT.md`](../presentation/16_PITCH_DECK_CONTENT.md) | `8,050` | `f3ff40b2fbf73154110929586c5a4c467dcd20e0e87d762ef6f0a9035dbd6084` | **Mandatory** (12-Slide Presentation Content) | **VALIDATED** |
 | [`docs/presentation/17_PRESENTER_NOTES.md`](../presentation/17_PRESENTER_NOTES.md) | `6,304` | `2f2a617ebe18f748b9ccc6f5aa831116f1d71222b8fcb29be8afc3f82054c2d7` | **Optional** (5-Min & 10-Min Speaker Script + Q&A) | **VALIDATED** |
@@ -42,7 +43,7 @@
 | [`docs/architecture/15_DATA_FLOW_AND_SEQUENCE.md`](../architecture/15_DATA_FLOW_AND_SEQUENCE.md) | `4,234` | `3b97650ba3625108cb6b9bbbff11961bbe617e36f5a75fdd2a6d95f0a31976c9` | **Mandatory** (Data Flow & Sequence Diagrams) | **VALIDATED** |
 | [`docs/security/08_SECURITY_SELF_ASSESSMENT.md`](../security/08_SECURITY_SELF_ASSESSMENT.md) | `6,521` | `9afb51cd881baf060f5a445e778d0ae1322ed531d688e73737513e80246027ad` | **Mandatory** (Security Self-Assessment) | **VALIDATED** |
 | [`docs/security/09_KNOWN_RISKS_AND_LIMITATIONS.md`](../security/09_KNOWN_RISKS_AND_LIMITATIONS.md) | `4,489` | `f0073e05ea45597d4be2304223851072e1e142769c960c974873a19df7dda5fb` | **Mandatory** (Known Risks & Residual Limitations) | **VALIDATED** |
-| [`docs/security/10_THREAT_MODEL.md`](../security/10_THREAT_MODEL.md) | `6,168` | `5bdf62eb3f3a5a315a6d0ba72e5894bd2a3adf3488d6aea25e954524cfe958ff` | **Mandatory** (Formal Threat Model `T-01`–`T-07`) | **VALIDATED** |
+| [`docs/security/10_THREAT_MODEL.md`](../security/10_THREAT_MODEL.md) | `6,168` | `5bdf62eb3f3a5a315a6d0ba72e5894bd2a3adf3488d6aea25e954524cfe958ff` | **Mandatory** (Formal Threat Model `T-01`Ã¢â‚¬â€œ`T-07`) | **VALIDATED** |
 | [`docs/verification/01_IMPLEMENTATION_REALITY_AUDIT.md`](../verification/01_IMPLEMENTATION_REALITY_AUDIT.md) | `13,710` | `077a80f0c55ed542795a275d5f07269ec51518b4bf954037a541dc033aa9ac82` | **Supporting Evidence** (Code Reality Audit) | **VALIDATED** |
 | [`docs/verification/02_REAL_USER_BROWSER_TEST_REPORT.md`](../verification/02_REAL_USER_BROWSER_TEST_REPORT.md) | `5,614` | `9a6994fd08535617153b39afebc5ca00e47ff012503a9d31e211ff93400d456a` | **Supporting Evidence** (12-Flow Chrome E2E Report) | **VALIDATED** |
 | [`docs/verification/03_HUMAN_CLICK_BY_CLICK_BN.md`](../verification/03_HUMAN_CLICK_BY_CLICK_BN.md) | `10,042` | `24bd54d77814a7d7c2a0a297a5178d2c00bc2940c5c688f068d66fa7afe87de9` | **Optional / Owner Guide** (Bengali Browser QA Guide) | **VALIDATED** |
