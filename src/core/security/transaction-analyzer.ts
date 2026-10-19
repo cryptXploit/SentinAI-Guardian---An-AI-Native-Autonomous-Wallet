@@ -552,6 +552,30 @@ export function analyzeTransaction(params: {
     }
   }
 
+  // --- RULE 8.12: NATIVE ETH TRANSFER POLICY CAP ENFORCEMENT ---
+  if (operationType === 'NATIVE_TRANSFER' && policy.maxTransferAmountETH !== undefined) {
+    try {
+      const maxEthWei = parseUnits(String(policy.maxTransferAmountETH), 18);
+      if (decodedRawAmount > maxEthWei) {
+        findings.push({
+          code: 'TRANSFER_POLICY_CAP_EXCEEDED',
+          severity: 'CRITICAL',
+          category: 'POLICY_VIOLATION',
+          title: 'Native ETH Transfer Policy Cap Exceeded',
+          explanation: `Policy Blocked: Transfer amount (${formattedDecodedAmount} ETH) exceeds maximum allowed single-transfer limit (${policy.maxTransferAmountETH} ETH).`,
+          evidence: {
+            requestedAmountETH: formattedDecodedAmount,
+            maxAllowedETH: String(policy.maxTransferAmountETH),
+          },
+          source: 'POLICY_ENGINE',
+          affectsExecution: true,
+        });
+      }
+    } catch {
+      // Ignore malformed policy cap string here; handled by evaluatePolicy
+    }
+  }
+
   // Simulation checks if provided
   if (simulationSuccess === false) {
     findings.push({

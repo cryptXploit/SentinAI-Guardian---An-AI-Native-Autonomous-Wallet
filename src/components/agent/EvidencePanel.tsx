@@ -15,9 +15,20 @@ import {
   Activity,
   Lock,
   Sparkles,
+  X,
+  XCircle,
+  Eye,
 } from "lucide-react";
 import { PrepareResult, AuthorizeResult } from "@/app/actions/orchestrator";
 import IntentComparisonPanel from "./IntentComparisonPanel";
+
+function safeJsonStringify(value: unknown): string {
+  return JSON.stringify(
+    value,
+    (_key, val) => (typeof val === "bigint" ? val.toString() : val),
+    2
+  );
+}
 
 interface EvidencePanelProps {
   prepareResult?: PrepareResult | null;
@@ -38,6 +49,7 @@ export default function EvidencePanel({
 }: EvidencePanelProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showPreExecutionReview, setShowPreExecutionReview] = useState(true);
+  const [dismissedModalProposalId, setDismissedModalProposalId] = useState<string | null>(null);
 
   if (!prepareResult && !executionResult) {
     return null;
@@ -252,7 +264,7 @@ export default function EvidencePanel({
           {isExpanded && (
             <div className="p-6 bg-background border-t border-border/50 overflow-x-auto">
               <pre className="text-xs text-gray-400 font-mono">
-                {JSON.stringify(executionResult, null, 2)}
+                {safeJsonStringify(executionResult)}
               </pre>
             </div>
           )}
@@ -268,58 +280,169 @@ export default function EvidencePanel({
   const isBlocked = !prepareResult?.success || Boolean(analysis && !analysis.canExecute);
   const isReadyForAuth = !isBlocked && !isDemo && Boolean(prepareResult?.proposalId && summary);
   const proposalId = prepareResult?.proposalId;
+  const isApprovalModalOpen = Boolean(
+    isReadyForAuth && proposalId && dismissedModalProposalId !== proposalId
+  );
 
   return (
     <div className="space-y-6">
-      {/* 1. Milestone R7 / R7.1 Intent Comparison Panel */}
-      {analysis && (
-        <IntentComparisonPanel
-          analysis={analysis}
-          exposure={prepareResult?.exposure}
-          explanation={prepareResult?.explanation}
-          summary={summary}
-          isBlocked={isBlocked}
-          isDemo={isDemo}
-          error={prepareResult?.error}
-          aiProvenance={prepareResult?.aiProvenance}
-          aiProviderUsed={prepareResult?.aiProviderUsed}
-          aiModelUsed={prepareResult?.aiModelUsed}
-        />
-      )}
-
-      {/* Demo Fixture Isolation Card (R7.1 Priority A) */}
-      {isDemo && (
-        <div className="border border-purple-500/40 bg-purple-950/15 rounded-xl p-5 flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-purple-500/20 text-purple-400">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h5 className="font-semibold text-sm text-purple-300">
-                  Controlled Security Demonstration Fixture
-                </h5>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                  DEMO / SIMULATED
-                </span>
+      {/* POPUP MODAL: Human-in-the-Loop Execution Gate (Appears automatically for valid live proposals) */}
+      {isApprovalModalOpen && proposalId && summary && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="hitl-modal-title"
+        >
+          <div className="w-full max-w-2xl bg-[#121824] border-2 border-emerald-500/50 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-emerald-950/30 border-b border-emerald-500/30 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 id="hitl-modal-title" className="text-base font-bold text-white">
+                      Human-in-the-Loop Authorization Required
+                    </h3>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                      STAGE 06 · READY FOR SIGNING
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    All 5 pre-execution security gates passed. Review and explicitly approve or decline this transaction.
+                  </p>
+                </div>
               </div>
-              <p className="text-xs text-gray-400 mt-1">
-                This scenario is an educational simulation. By architectural design, security demonstration fixtures are permanently isolated from the wallet signing key and cannot be broadcast to the blockchain.
-              </p>
+              <button
+                type="button"
+                onClick={() => setDismissedModalProposalId(proposalId)}
+                disabled={isAuthorizing}
+                title="Close popup to inspect full technical evidence"
+                className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="p-3.5 rounded-xl bg-[#0B0F17] border border-border">
+                  <span className="text-gray-400 uppercase tracking-wider font-semibold text-[10px] block">
+                    Action &amp; Verified Amount
+                  </span>
+                  <span className="text-base font-bold text-emerald-400 mt-1 block tabular-nums">
+                    {summary.action}: {summary.amount} {summary.asset}
+                  </span>
+                  <span className="text-[11px] text-gray-400 font-mono">
+                    Network: Ethereum Sepolia (11155111)
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-[#0B0F17] border border-border">
+                  <span className="text-gray-400 uppercase tracking-wider font-semibold text-[10px] block">
+                    Verified Recipient ({summary.recipientAlias})
+                  </span>
+                  <span
+                    className="font-mono text-gray-200 mt-1 block break-all text-xs"
+                    title={summary.recipientAddress}
+                  >
+                    {summary.recipientAddress}
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-[#0B0F17] border border-border">
+                  <span className="text-gray-400 uppercase tracking-wider font-semibold text-[10px] block">
+                    Deterministic Policy &amp; Simulation
+                  </span>
+                  <span className="text-emerald-300 font-semibold mt-1 block">
+                    PASS — Allowed by SQLite Policy
+                  </span>
+                  <span className="text-[11px] text-gray-400 font-mono">
+                    Simulated Gas: {summary.gasEstimated || "12000"} units (Floor: 21000)
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-[#0B0F17] border border-border">
+                  <span className="text-gray-400 uppercase tracking-wider font-semibold text-[10px] block">
+                    Proposal ID &amp; AI Provenance
+                  </span>
+                  <span className="font-mono text-accent-blue mt-1 block truncate" title={proposalId}>
+                    {proposalId}
+                  </span>
+                  <span className="text-[11px] text-gray-400 font-mono">
+                    Source: {prepareResult?.aiProvenance || "LIVE_AI"} ({prepareResult?.aiProviderUsed || "groq"})
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-[#0B0F17] border border-border/80">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 block">
+                  IIP Keccak-256 Cryptographic Digest (Tamper-Proof Commitment)
+                </span>
+                <code className="text-[11px] font-mono text-accent-blue break-all mt-1 block">
+                  {summary.proofDigest}
+                </code>
+              </div>
+            </div>
+
+            {/* Modal Footer with Decline / Inspect / Approve Buttons */}
+            <div className="px-6 py-4 bg-[#0B0F17]/90 border-t border-border flex items-center justify-between flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => setDismissedModalProposalId(proposalId)}
+                disabled={isAuthorizing}
+                className="px-3.5 py-2.5 bg-surface border border-border text-gray-300 font-medium rounded-lg hover:bg-surface-hover hover:text-white transition-colors text-xs flex items-center gap-1.5"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                Inspect Full Evidence First
+              </button>
+
+              <div className="flex items-center gap-2.5 flex-wrap">
+                {onCancel && (
+                  <button
+                    type="button"
+                    onClick={onCancel}
+                    disabled={isAuthorizing}
+                    className="px-4 py-2.5 bg-red-950/40 border border-red-500/40 text-red-300 font-medium rounded-lg hover:bg-red-900/50 hover:text-white disabled:opacity-50 transition-colors text-sm flex items-center gap-1.5"
+                  >
+                    <XCircle className="w-4 h-4" />
+                    Decline / Cancel Proposal
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => onAuthorize && onAuthorize(proposalId)}
+                  disabled={isAuthorizing}
+                  className="px-5 py-2.5 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-500 disabled:opacity-50 transition-colors flex items-center gap-2 shadow-md text-sm"
+                >
+                  {isAuthorizing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Authorizing &amp; Signing...
+                    </>
+                  ) : (
+                    <>
+                      Confirm &amp; Execute Transaction
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
-          <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-            NON-EXECUTABLE DEMO
-          </span>
         </div>
       )}
 
-      {/* 2. Phase 1 Authorization Gate (Live Verified Proposals ONLY) */}
+      {/* 1. Phase 1 Authorization Gate (Placed at TOP of EvidencePanel so it is immediately visible inline) */}
       {isReadyForAuth && proposalId && summary && (
-        <div className="border border-emerald-500/30 bg-surface rounded-xl overflow-hidden shadow-lg p-6 space-y-5">
+        <div className="border-2 border-emerald-500/40 bg-surface rounded-xl overflow-hidden shadow-lg p-6 space-y-5">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="space-y-1">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Lock className="w-4 h-4 text-emerald-400" />
                 <h4 className="font-semibold text-foreground text-sm">
                   Human-in-the-Loop Execution Gate
@@ -337,6 +460,15 @@ export default function EvidencePanel({
             </div>
 
             <div className="flex items-center gap-2.5 flex-wrap">
+              {dismissedModalProposalId === proposalId && (
+                <button
+                  type="button"
+                  onClick={() => setDismissedModalProposalId(null)}
+                  className="px-3.5 py-2 bg-emerald-950/30 border border-emerald-500/40 text-emerald-300 font-medium rounded-lg hover:bg-emerald-900/40 transition-colors text-xs"
+                >
+                  Open Approval Popup
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setShowPreExecutionReview((prev) => !prev)}
@@ -349,7 +481,7 @@ export default function EvidencePanel({
                   type="button"
                   onClick={onCancel}
                   disabled={isAuthorizing}
-                  className="px-4 py-2.5 bg-background border border-border text-gray-300 font-medium rounded-lg hover:bg-surface-hover hover:text-white disabled:opacity-50 transition-colors text-sm"
+                  className="px-4 py-2.5 bg-red-950/30 border border-red-500/40 text-red-300 font-medium rounded-lg hover:bg-red-900/40 hover:text-white disabled:opacity-50 transition-colors text-sm"
                 >
                   Cancel Proposal
                 </button>
@@ -437,7 +569,34 @@ export default function EvidencePanel({
         </div>
       )}
 
-      {/* Blocked Security Barrier (for genuine blocked live commands) */}
+      {/* Demo Fixture Isolation Card (Placed at TOP when running DEMO / SIMULATED fixtures) */}
+      {isDemo && (
+        <div className="border border-purple-500/40 bg-purple-950/15 rounded-xl p-5 flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-purple-500/20 text-purple-400">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h5 className="font-semibold text-sm text-purple-300">
+                  Controlled Security Demonstration Fixture
+                </h5>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  DEMO / SIMULATED
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                This scenario is an educational simulation. By architectural design, security demonstration fixtures are permanently isolated from the wallet signing key and cannot be approved or broadcast. Run a live transfer (e.g., &ldquo;Send 0.0001 ETH to alice&rdquo;) to trigger the Human-in-the-Loop Approval Popup.
+              </p>
+            </div>
+          </div>
+          <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+            NON-EXECUTABLE DEMO
+          </span>
+        </div>
+      )}
+
+      {/* Blocked Security Barrier (Placed at TOP for genuine blocked live commands) */}
       {isBlocked && !isDemo && (
         <div className="border border-red-500/30 bg-red-950/10 rounded-xl p-5 flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3">
@@ -481,6 +640,22 @@ export default function EvidencePanel({
         </div>
       )}
 
+      {/* 2. Milestone R7 / R7.1 Intent Comparison Panel */}
+      {analysis && (
+        <IntentComparisonPanel
+          analysis={analysis}
+          exposure={prepareResult?.exposure}
+          explanation={prepareResult?.explanation}
+          summary={summary}
+          isBlocked={isBlocked}
+          isDemo={isDemo}
+          error={prepareResult?.error}
+          aiProvenance={prepareResult?.aiProvenance}
+          aiProviderUsed={prepareResult?.aiProviderUsed}
+          aiModelUsed={prepareResult?.aiModelUsed}
+        />
+      )}
+
       {/* 3. Expandable Proposal Audit Record */}
       {prepareResult && (
         <div className="border border-border/50 rounded-xl overflow-hidden bg-surface">
@@ -495,7 +670,7 @@ export default function EvidencePanel({
           {isExpanded && (
             <div className="p-6 bg-background border-t border-border/50 overflow-x-auto">
               <pre className="text-xs text-gray-400 font-mono">
-                {JSON.stringify(prepareResult, null, 2)}
+                {safeJsonStringify(prepareResult)}
               </pre>
             </div>
           )}
@@ -504,3 +679,4 @@ export default function EvidencePanel({
     </div>
   );
 }
+

@@ -111,7 +111,7 @@ function computePipelineStepStates(
   executionResult: AuthorizeResult | null
 ): Array<"idle" | "active" | "pass" | "block"> {
   if (isProcessing) {
-    return ["active", "active", "active", " idle" as "idle", "idle", "idle"];
+    return ["active", "active", "active", "idle", "idle", "idle"];
   }
   if (!prepareResult && !executionResult) {
     return ["idle", "idle", "idle", "idle", "idle", "idle"];
@@ -131,21 +131,40 @@ function computePipelineStepStates(
     if (!isBlocked) {
       return ["pass", "pass", "pass", "pass", "pass", "active"];
     }
-    if (step === "AI_PARSE" || step === "INTENT_VALIDATION") {
+    if (step === "INTENT_PARSING" || step === "AI_PARSE" || step === "INTENT_VALIDATION") {
       return ["block", "idle", "idle", "idle", "idle", "idle"];
     }
-    if (step === "RECIPIENT_RESOLUTION" || step === "BUILD") {
+    if (step === "RECIPIENT_RESOLUTION" || step === "TRANSACTION_BUILDING" || step === "BUILD") {
       return ["pass", "block", "idle", "idle", "idle", "idle"];
     }
-    if (step === "POLICY") {
-      return ["pass", "pass", "block", "block", "idle", "idle"];
+    if (step === "POLICY" || (step === "POLICY_EVALUATION" && !prepareResult.analysis)) {
+      return ["pass", "pass", "block", "idle", "idle", "idle"];
     }
-    if (step === "SIMULATION") {
+    if (step === "SIMULATION" && !prepareResult.analysis) {
       return ["pass", "pass", "pass", "pass", "block", "idle"];
     }
-    if (prepareResult.isDemo) {
-      const demoAllowed = Boolean(prepareResult.analysis?.canExecute);
-      return ["pass", "pass", demoAllowed ? "pass" : "block", demoAllowed ? "pass" : "block", "pass", "idle"];
+    if (prepareResult.analysis) {
+      const blockingFindings = prepareResult.analysis.findings.filter((f) => f.affectsExecution);
+      const hasPolicyBlock = blockingFindings.some(
+        (f) => f.source === "POLICY_ENGINE" || f.category === "POLICY_VIOLATION"
+      );
+      const hasAnalyzerBlock =
+        prepareResult.analysis.mismatches.length > 0 ||
+        blockingFindings.some(
+          (f) => f.source === "DETERMINISTIC_ANALYZER" || f.category === "INTENT_MISMATCH"
+        );
+      const hasSimBlock = blockingFindings.some(
+        (f) => f.source === "SIMULATOR" || f.category === "SIMULATION"
+      );
+
+      return [
+        "pass",
+        "pass",
+        hasPolicyBlock ? "block" : "pass",
+        hasAnalyzerBlock ? "block" : "pass",
+        hasSimBlock ? "block" : "pass",
+        "idle",
+      ];
     }
     return ["block", "idle", "idle", "idle", "idle", "idle"];
   }

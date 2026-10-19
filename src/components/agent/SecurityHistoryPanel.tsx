@@ -69,7 +69,24 @@ export default function SecurityHistoryPanel({ refreshTrigger = 0 }: { refreshTr
     };
   }, [refreshTrigger]);
 
-  const getStateBadge = (state: string) => {
+  const getStateBadge = (item: ProposalHistoryItem) => {
+    const state = item.status;
+    if (state === "PREPARED" && item.provenance === "SECURITY_FIXTURE") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30">
+          <Shield className="w-3 h-3" />
+          SIMULATED FIXTURE
+        </span>
+      );
+    }
+    if (state === "PREPARED" && !item.isExecutable) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-red-500/15 text-red-400 border border-red-500/30">
+          <XCircle className="w-3 h-3" />
+          BLOCKED (NON-EXECUTABLE)
+        </span>
+      );
+    }
     switch (state) {
       case "CONFIRMED":
         return (
@@ -173,7 +190,7 @@ export default function SecurityHistoryPanel({ refreshTrigger = 0 }: { refreshTr
                   </td>
                   <td className="py-3 px-3 align-top">
                     <div className="flex flex-col items-start gap-1.5">
-                      {getStateBadge(item.status)}
+                      {getStateBadge(item)}
                       {["RECONCILIATION_REQUIRED", "SUBMITTING", "SUBMITTED", "EXECUTION_UNKNOWN"].includes(
                         item.status
                       ) && (
