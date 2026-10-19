@@ -25,12 +25,12 @@
 
 | Bug ID | Subsystem | File & Lines | Root Cause | Status | Remediation Summary |
 |---|---|---|---|---|---|
-| **BUG-01** | AI Error Handling | [`src/core/ai/provider.ts`](file:///e:/SentinAI%20Gaurdian/src/core/ai/provider.ts#L136-L149) | HTTP 500 internal server error was not explicitly caught by `classifyAiError`, falling back to `INVALID_RESPONSE`. | **FIXED** | Added explicit `HTTP 500` / `INTERNAL` pattern match mapping to `SERVICE_UNAVAILABLE`. |
-| **BUG-02** | Authentication | [`src/app/api/auth/login/route.ts`](file:///e:/SentinAI%20Gaurdian/src/app/api/auth/login/route.ts#L60-L66) | Password verification used non-constant time comparison (`password !== configuredPassword`), creating a timing side-channel. | **FIXED** | Implemented `verifyPasswordConstantTime` using SHA-256 pre-hashing and Node.js `crypto.timingSafeEqual`. |
-| **BUG-03** | AI Fallback Brittleness | [`src/core/ai/provider.ts`](file:///e:/SentinAI%20Gaurdian/src/core/ai/provider.ts#L284-L350) | Regex parser failed on standard synonyms ("transfer", "pay", "deposit", "allow", "send alice 0.05 eth"). | **FIXED** | Implemented multi-format regex parser with polite prefix stripping, word-number normalization, and reverse syntax. |
-| **BUG-04** | Multilingual Void | [`src/core/ai/provider.ts`](file:///e:/SentinAI%20Gaurdian/src/core/ai/provider.ts#L340-L360) | Zero support for Bengali or Banglish commands ("pathao", "send koro", "dekhao", "koto"). | **FIXED** | Added deterministic Banglish grammar rules for transfers and balance inquiries. |
-| **BUG-05** | Provenance Transparency | [`src/app/actions/orchestrator.ts`](file:///e:/SentinAI%20Gaurdian/src/app/actions/orchestrator.ts#L110-L135) | Proposals and UI did not clearly indicate whether an intent was parsed via Live AI or Deterministic Fallback. | **FIXED** | Added `aiProvenance: 'LIVE_AI' \| 'DETERMINISTIC_FALLBACK'` tracking and UI badges in console and comparison panel. |
-| **BUG-06** | Threat Intel Module | [`src/core/security/intelligence-provider.ts`](file:///e:/SentinAI%20Gaurdian/src/core/security/intelligence-provider.ts#L75-L88) | GoPlus intelligence was disconnected; investigation revealed GoPlus API does not index Sepolia Testnet. | **DOCUMENTED** | Verified why it is inactive: Sepolia contracts return `TESTNET_NOT_INDEXED`. Kept as modular mainnet extension. |
+| **BUG-01** | AI Error Handling | [`src/core/ai/provider.ts`](../../src/core/ai/provider.ts#L136-L149) | HTTP 500 internal server error was not explicitly caught by `classifyAiError`, falling back to `INVALID_RESPONSE`. | **FIXED** | Added explicit `HTTP 500` / `INTERNAL` pattern match mapping to `SERVICE_UNAVAILABLE`. |
+| **BUG-02** | Authentication | [`src/app/api/auth/login/route.ts`](../../src/app/api/auth/login/route.ts#L60-L66) | Password verification used non-constant time comparison (`password !== configuredPassword`), creating a timing side-channel. | **FIXED** | Implemented `verifyPasswordConstantTime` using SHA-256 pre-hashing and Node.js `crypto.timingSafeEqual`. |
+| **BUG-03** | AI Fallback Brittleness | [`src/core/ai/provider.ts`](../../src/core/ai/provider.ts#L284-L350) | Regex parser failed on standard synonyms ("transfer", "pay", "deposit", "allow", "send alice 0.05 eth"). | **FIXED** | Implemented multi-format regex parser with polite prefix stripping, word-number normalization, and reverse syntax. |
+| **BUG-04** | Multilingual Void | [`src/core/ai/provider.ts`](../../src/core/ai/provider.ts#L340-L360) | Zero support for Bengali or Banglish commands ("pathao", "send koro", "dekhao", "koto"). | **FIXED** | Added deterministic Banglish grammar rules for transfers and balance inquiries. |
+| **BUG-05** | Provenance Transparency | [`src/app/actions/orchestrator.ts`](../../src/app/actions/orchestrator.ts#L110-L135) | Proposals and UI did not clearly indicate whether an intent was parsed via Live AI or Deterministic Fallback. | **FIXED** | Added `aiProvenance: 'LIVE_AI' \| 'DETERMINISTIC_FALLBACK'` tracking and UI badges in console and comparison panel. |
+| **BUG-06** | Threat Intel Module | [`src/core/security/intelligence-provider.ts`](../../src/core/security/intelligence-provider.ts#L75-L88) | GoPlus intelligence was disconnected; investigation revealed GoPlus API does not index Sepolia Testnet. | **DOCUMENTED** | Verified why it is inactive: Sepolia contracts return `TESTNET_NOT_INDEXED`. Kept as modular mainnet extension. |
 
 ---
 
@@ -134,24 +134,24 @@
 
 ## 7. FILES MODIFIED & IMPLEMENTATION DIFF
 
-1. [`src/core/security/auth.ts`](file:///e:/SentinAI%20Gaurdian/src/core/security/auth.ts)
+1. [`src/core/security/auth.ts`](../../src/core/security/auth.ts)
    - Exported `verifyPasswordConstantTime` using SHA-256 pre-hashed buffers and `crypto.timingSafeEqual`.
-2. [`src/app/api/auth/login/route.ts`](file:///e:/SentinAI%20Gaurdian/src/app/api/auth/login/route.ts)
+2. [`src/app/api/auth/login/route.ts`](../../src/app/api/auth/login/route.ts)
    - Imported and used `verifyPasswordConstantTime` for operator login.
-3. [`src/core/ai/provider.ts`](file:///e:/SentinAI%20Gaurdian/src/core/ai/provider.ts)
+3. [`src/core/ai/provider.ts`](../../src/core/ai/provider.ts)
    - Added HTTP 500 error classification in `classifyAiError`.
    - Upgraded `MockIntentProvider` with conversational prefix stripping, verb synonyms, deposit mapping, amount max tokens, reverse syntax, and Banglish rules.
    - Added `_lastParsedProvenance` state tracking and `getLastParsedProvenance()` export.
-4. [`src/core/ai/intent-parser.ts`](file:///e:/SentinAI%20Gaurdian/src/core/ai/intent-parser.ts)
+4. [`src/core/ai/intent-parser.ts`](../../src/core/ai/intent-parser.ts)
    - Exported `getLastParsedProvenance` from `provider.ts`.
-5. [`src/app/actions/orchestrator.ts`](file:///e:/SentinAI%20Gaurdian/src/app/actions/orchestrator.ts)
+5. [`src/app/actions/orchestrator.ts`](../../src/app/actions/orchestrator.ts)
    - Added `aiProvenance: 'LIVE_AI' | 'DETERMINISTIC_FALLBACK'` to `PrepareResult` and `ProposalSummary`.
    - Propagated accurate AI provenance through query responses and transaction proposals.
-6. [`src/components/agent/IntentComparisonPanel.tsx`](file:///e:/SentinAI%20Gaurdian/src/components/agent/IntentComparisonPanel.tsx)
+6. [`src/components/agent/IntentComparisonPanel.tsx`](../../src/components/agent/IntentComparisonPanel.tsx)
    - Added AI provenance badge (`LIVE AI` vs `FALLBACK PARSER`) alongside status badges.
-7. [`src/components/agent/EvidencePanel.tsx`](file:///e:/SentinAI%20Gaurdian/src/components/agent/EvidencePanel.tsx)
+7. [`src/components/agent/EvidencePanel.tsx`](../../src/components/agent/EvidencePanel.tsx)
    - Added AI provenance badge to read-only query header cards.
-8. [`src/core/ai/__tests__/r8-reliability-recovery.test.ts`](file:///e:/SentinAI%20Gaurdian/src/core/ai/__tests__/r8-reliability-recovery.test.ts)
+8. [`src/core/ai/__tests__/r8-reliability-recovery.test.ts`](../../src/core/ai/__tests__/r8-reliability-recovery.test.ts)
    - Created comprehensive 25-test regression suite covering all R8 capabilities.
 
 ---

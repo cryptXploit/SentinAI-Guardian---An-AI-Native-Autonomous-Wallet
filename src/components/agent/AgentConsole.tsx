@@ -69,7 +69,7 @@ const JUDGE_WALKTHROUGH_STEPS = [
   {
     step: 4,
     title: "Deterministic Spend Cap",
-    subtitle: "5 ETH transfer blocked by 0.5 ETH per-tx policy limit",
+    subtitle: "5 ETH transfer blocked by 1.0 ETH maxTransferAmountETH policy",
     mode: "LIVE" as const,
     command: "Send 5 ETH to alice",
   },

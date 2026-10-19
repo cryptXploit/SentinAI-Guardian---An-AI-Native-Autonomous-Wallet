@@ -220,7 +220,14 @@ async function main() {
       screenshot: 'evidence/browser/03_authenticated_command_center_1440.png',
     });
 
-    // 4. Responsive Viewports (Tablet 768px & Mobile 375px)
+    // 4. Responsive Viewports (Laptop 1024px, Tablet 768px & Mobile 375px)
+    await cdp.setViewport(1024, 768, false);
+    await sleep(400);
+    const laptopNoOverflow = await cdp.evaluate<boolean>(
+      `document.documentElement.scrollWidth <= window.innerWidth + 4`
+    );
+    await cdp.screenshot(path.resolve(process.cwd(), 'evidence/ui/laptop_1024_overview.png'));
+
     await cdp.setViewport(768, 1024, true);
     await sleep(400);
     const tabletNoOverflow = await cdp.evaluate<boolean>(
@@ -238,10 +245,10 @@ async function main() {
     await cdp.setViewport(1440, 900, false);
     await sleep(400);
     results.push({
-      step: '4. Responsive Layout Audit (1440px, 768px, 375px)',
-      passed: tabletNoOverflow && mobileNoOverflow,
-      details: `tabletNoOverflow=${tabletNoOverflow}, mobileNoOverflow=${mobileNoOverflow}`,
-      screenshot: 'evidence/ui/mobile_375_overview.png',
+      step: '4. Responsive Layout Audit (1440px, 1024px, 768px, 375px)',
+      passed: laptopNoOverflow && tabletNoOverflow && mobileNoOverflow,
+      details: `laptopNoOverflow=${laptopNoOverflow}, tabletNoOverflow=${tabletNoOverflow}, mobileNoOverflow=${mobileNoOverflow}`,
+      screenshot: 'evidence/ui/laptop_1024_overview.png',
     });
 
     // 5. Guided Step 1: Live Wallet Balance Query ("Show my balance")
@@ -395,9 +402,10 @@ async function main() {
   } finally {
     cdp.close();
     chromeProc.kill();
-    // Restore original sentinai.db so test runs do not leave extra rows
+    // Restore original sentinai.db and truncate WAL so test runs never leave extra rows
     try {
       fs.copyFileSync(backupPath, dbPath);
+      if (fs.existsSync(`${dbPath}-wal`)) fs.writeFileSync(`${dbPath}-wal`, Buffer.alloc(0));
       fs.unlinkSync(backupPath);
     } catch {
       // ignore

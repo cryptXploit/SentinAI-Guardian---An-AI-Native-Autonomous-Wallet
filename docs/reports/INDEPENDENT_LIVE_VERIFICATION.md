@@ -10,39 +10,39 @@ Every architectural question was independently verified against actual source fi
 
 ### 1.1 Is Groq really integrated into the runtime?
 * **Verdict:** ✅ **VERIFIED LIVE**
-* **File & Function:** [`src/core/ai/provider.ts`](file:///e:/SentinAI%20Gaurdian/src/core/ai/provider.ts#L302-L418) (`GroqIntentProvider.parseIntent`, `GroqIntentProvider.callGroqEndpoint`) and [`src/core/ai/security-explainer.ts`](file:///e:/SentinAI%20Gaurdian/src/core/ai/security-explainer.ts#L88-L137) (`explainSecurityFindings`).
+* **File & Function:** [`src/core/ai/provider.ts`](../../src/core/ai/provider.ts#L302-L418) (`GroqIntentProvider.parseIntent`, `GroqIntentProvider.callGroqEndpoint`) and [`src/core/ai/security-explainer.ts`](../../src/core/ai/security-explainer.ts#L88-L137) (`explainSecurityFindings`).
 * **Evidence:** Makes authenticated `POST` requests to `https://api.groq.com/openai/v1/chat/completions` with `response_format: { type: 'json_object' }`, 10-second `AbortController` timeout, primary model `openai/gpt-oss-120b`, and automatic model failover to `openai/gpt-oss-20b` and `qwen/qwen3.8-27b`.
 
 ### 1.2 Does Gemini $\to$ Groq $\to$ Local Fallback actually work?
 * **Verdict:** ✅ **VERIFIED LIVE**
-* **File & Function:** [`src/core/ai/intent-parser.ts`](file:///e:/SentinAI%20Gaurdian/src/core/ai/intent-parser.ts#L18-L78) (`parseIntentWithProvenance`) and [`src/core/ai/provider.ts`](file:///e:/SentinAI%20Gaurdian/src/core/ai/provider.ts#L815-L844) (`getIntentProvider`).
+* **File & Function:** [`src/core/ai/intent-parser.ts`](../../src/core/ai/intent-parser.ts#L18-L78) (`parseIntentWithProvenance`) and [`src/core/ai/provider.ts`](../../src/core/ai/provider.ts#L815-L844) (`getIntentProvider`).
 * **Evidence:**
   1. When `GEMINI_API_KEY` is present, `getIntentProvider()` instantiates `GeminiIntentProvider`.
   2. When `GeminiIntentProvider.parseIntent()` throws (e.g., `RATE_LIMITED: 429 RESOURCE_EXHAUSTED`), `parseIntentWithProvenance` catches the error, checks `process.env.GROQ_API_KEY`, and invokes `GroqIntentProvider`.
   3. If both Gemini and Groq fail (or are unconfigured), `parseIntentWithProvenance` falls back to `MockIntentProvider` (`DETERMINISTIC_FALLBACK`).
-  4. Verified in unit tests `GQ2`–`GQ5` ([`src/core/ai/__tests__/r8-2-intent-safety.test.ts`](file:///e:/SentinAI%20Gaurdian/src/core/ai/__tests__/r8-2-intent-safety.test.ts#L228-L316)) and live runtime execution.
+  4. Verified in unit tests `GQ2`–`GQ5` ([`src/core/ai/__tests__/r8-2-intent-safety.test.ts`](../../src/core/ai/__tests__/r8-2-intent-safety.test.ts#L228-L316)) and live runtime execution.
 
 ### 1.3 Does the UI correctly display which provider produced the result?
 * **Verdict:** 🟡 **PARTIALLY VERIFIED**
-* **File & Function:** [`src/components/agent/IntentComparisonPanel.tsx`](file:///e:/SentinAI%20Gaurdian/src/components/agent/IntentComparisonPanel.tsx#L116-L124) & [`L340-L346`](file:///e:/SentinAI%20Gaurdian/src/components/agent/IntentComparisonPanel.tsx#L340-L346), [`src/components/agent/EvidencePanel.tsx`](file:///e:/SentinAI%20Gaurdian/src/components/agent/EvidencePanel.tsx#L68-L76).
+* **File & Function:** [`src/components/agent/IntentComparisonPanel.tsx`](../../src/components/agent/IntentComparisonPanel.tsx#L116-L124) & [`L340-L346`](../../src/components/agent/IntentComparisonPanel.tsx#L340-L346), [`src/components/agent/EvidencePanel.tsx`](../../src/components/agent/EvidencePanel.tsx#L68-L76).
 * **Evidence:**
   - The **Transaction Security Explanation** card explicitly displays `Google Gemini (...) · Xms` vs `Groq AI (openai/gpt-oss-120b) · Xms` vs `Deterministic Policy Engine`.
   - However, the top **Intent Provenance Badge** (`summary.aiProvenance`) only displays binary `LIVE AI` vs `FALLBACK PARSER` without distinguishing whether Gemini or Groq parsed the intent.
 
 ### 1.4 Is AI-generated JSON validated before proposal creation?
 * **Verdict:** ✅ **VERIFIED LIVE**
-* **File & Function:** [`src/core/domain/schemas.ts`](file:///e:/SentinAI%20Gaurdian/src/core/domain/schemas.ts#L13-L18) (`ParsedIntentSchema.parse`) and [`src/app/actions/orchestrator.ts`](file:///e:/SentinAI%20Gaurdian/src/app/actions/orchestrator.ts#L98-L164) (`validateStateChangingIntent`).
+* **File & Function:** [`src/core/domain/schemas.ts`](../../src/core/domain/schemas.ts#L13-L18) (`ParsedIntentSchema.parse`) and [`src/app/actions/orchestrator.ts`](../../src/app/actions/orchestrator.ts#L98-L164) (`validateStateChangingIntent`).
 * **Evidence:** Every AI response is first validated via Zod (`ParsedIntentSchema.parse`) and then checked by `validateStateChangingIntent`, which enforces action whitelist (`TRANSFER`/`APPROVE`), asset whitelist (`ETH`/`USDC`/`USDT`/`DAI`), positive decimal format, decimal precision ceilings (6 for USDC/USDT, 18 for ETH/DAI), prohibition of native ETH approvals, and contradiction/negation checks.
 
 ### 1.5 Can AI bypass deterministic policy enforcement?
 * **Verdict:** ✅ **VERIFIED SAFE (Cannot Bypass)**
-* **File & Function:** [`src/app/actions/orchestrator.ts`](file:///e:/SentinAI%20Gaurdian/src/app/actions/orchestrator.ts#L268-L409) (`prepareTransactionIntent`), [`src/core/policy/engine.ts`](file:///e:/SentinAI%20Gaurdian/src/core/policy/engine.ts#L22-L180) (`evaluatePolicy`), [`src/core/security/transaction-analyzer.ts`](file:///e:/SentinAI%20Gaurdian/src/core/security/transaction-analyzer.ts#L96-L611) (`analyzeTransaction`).
+* **File & Function:** [`src/app/actions/orchestrator.ts`](../../src/app/actions/orchestrator.ts#L268-L409) (`prepareTransactionIntent`), [`src/core/policy/engine.ts`](../../src/core/policy/engine.ts#L22-L180) (`evaluatePolicy`), [`src/core/security/transaction-analyzer.ts`](../../src/core/security/transaction-analyzer.ts#L96-L611) (`analyzeTransaction`).
 * **Evidence:** AI output is an untrusted `ParsedIntent` input to the deterministic pipeline. Even when live Groq (`openai/gpt-oss-120b`) extracted `{"action":"TRANSFER","asset":"ETH","amount":"10000","recipientAlias":"0xHacker"}` from a prompt-injection input, the server-side policy engine blocked the transaction (`isExecutable: false`).
 
 ### 1.6 Is policy enforcement implemented server-side, and does the execution endpoint revalidate independently?
 * **Verdict:** ✅ **VERIFIED LIVE**
-* **File & Function:** [`src/app/actions/orchestrator.ts`](file:///e:/SentinAI%20Gaurdian/src/app/actions/orchestrator.ts#L558-L626) (`authorizeAndExecute`) and [`src/core/execution/controller.ts`](file:///e:/SentinAI%20Gaurdian/src/core/execution/controller.ts#L67-L76) (`broadcastTransaction`).
-* **Evidence:** Both `prepareTransactionIntent` and `authorizeAndExecute` live in `"use server"` module [`src/app/actions/orchestrator.ts`](file:///e:/SentinAI%20Gaurdian/src/app/actions/orchestrator.ts#L1). During Phase 2 (`authorizeAndExecute`), the server independently:
+* **File & Function:** [`src/app/actions/orchestrator.ts`](../../src/app/actions/orchestrator.ts#L558-L626) (`authorizeAndExecute`) and [`src/core/execution/controller.ts`](../../src/core/execution/controller.ts#L67-L76) (`broadcastTransaction`).
+* **Evidence:** Both `prepareTransactionIntent` and `authorizeAndExecute` live in `"use server"` module [`src/app/actions/orchestrator.ts`](../../src/app/actions/orchestrator.ts#L1). During Phase 2 (`authorizeAndExecute`), the server independently:
   - Verifies session cookie (`verifySession`, Gate 1)
   - Rejects `SECURITY_FIXTURE` and `isExecutable === false` proposals (Gate 2.5)
   - Verifies proposal owner (`proposal.ownerId !== session.userId`, Gate 3)
@@ -54,26 +54,26 @@ Every architectural question was independently verified against actual source fi
 
 ### 1.7 Can a blocked transaction still reach the signing function?
 * **Verdict:** ✅ **VERIFIED SAFE (Cannot Reach Signer)**
-* **File & Function:** [`src/app/actions/orchestrator.ts`](file:///e:/SentinAI%20Gaurdian/src/app/actions/orchestrator.ts#L374-L381) & [`L571-L578`](file:///e:/SentinAI%20Gaurdian/src/app/actions/orchestrator.ts#L571-L578), [`src/core/security/proposal.ts`](file:///e:/SentinAI%20Gaurdian/src/core/security/proposal.ts#L204-L249).
+* **File & Function:** [`src/app/actions/orchestrator.ts`](../../src/app/actions/orchestrator.ts#L374-L381) & [`L571-L578`](../../src/app/actions/orchestrator.ts#L571-L578), [`src/core/security/proposal.ts`](../../src/core/security/proposal.ts#L204-L249).
 * **Evidence:** Blocked proposals are stored in SQLite with `is_executable = 0`. Both `authorizeProposal` and `lockProposalForExecution` include `AND is_executable = 1 AND provenance = 'LIVE_VERIFIED'` in their SQL `WHERE` clauses. `authorizeAndExecute` throws `NON_EXECUTABLE_PROPOSAL` at Gate 2.5 before any signing key is read.
 
 ### 1.8 Is there any mock result presented as live data?
 * **Verdict:** 🟡 **YES — 1 Mock Field Identified (`currentAllowanceRaw`)**
-* **File & Function:** [`src/app/actions/orchestrator.ts`](file:///e:/SentinAI%20Gaurdian/src/app/actions/orchestrator.ts#L339-L348) (`prepareTransactionIntent`) & [`src/core/security/approval-analyzer.ts`](file:///e:/SentinAI%20Gaurdian/src/core/security/approval-analyzer.ts#L69) (`analyzeApprovalExposure`).
+* **File & Function:** [`src/app/actions/orchestrator.ts`](../../src/app/actions/orchestrator.ts#L339-L348) (`prepareTransactionIntent`) & [`src/core/security/approval-analyzer.ts`](../../src/core/security/approval-analyzer.ts#L69) (`analyzeApprovalExposure`).
 * **Evidence:**
-  - Wallet ETH balance, ERC-20 token balances (`USDC`, `USDT`, `DAI`), and Sepolia block numbers are **genuinely fetched live from Sepolia RPC** ([`src/core/web3/wallet-service.ts`](file:///e:/SentinAI%20Gaurdian/src/core/web3/wallet-service.ts#L113-L280)).
+  - Wallet ETH balance, ERC-20 token balances (`USDC`, `USDT`, `DAI`), and Sepolia block numbers are **genuinely fetched live from Sepolia RPC** ([`src/core/web3/wallet-service.ts`](../../src/core/web3/wallet-service.ts#L113-L280)).
   - Demo threat fixtures are **clearly labeled** `DEMO / SIMULATED` and `NON-EXECUTABLE DEMO`.
   - **Exception (Finding CSF-03):** In live ERC-20 `APPROVE` analysis, `orchestrator.ts` does not query the ERC-20 contract's on-chain `allowance(owner, spender)` and leaves `currentAllowanceRaw = 0n` (hardcoded default), displaying `Current Allowance: 0 USDC` in the UI.
 
 ### 1.9 Are policies hardcoded or user-configurable?
 * **Verdict:** 🔵 **HARDCODED IN SOURCE CODE**
-* **File & Symbol:** [`src/core/policy/user-policy.ts`](file:///e:/SentinAI%20Gaurdian/src/core/policy/user-policy.ts#L3-L43) (`MOCK_USER_POLICY`).
+* **File & Symbol:** [`src/core/policy/user-policy.ts`](../../src/core/policy/user-policy.ts#L3-L43) (`MOCK_USER_POLICY`).
 * **Evidence:** `maxTransferAmountETH: "1.0"`, `allowUnlimitedApproval: false`, `trustedContacts` (`alice`, `bob`, `uniswap`), and `tokenApprovalPolicies` (`100 USDC/USDT/DAI` caps) are static TypeScript constants. There is no UI or database table to edit policies at runtime.
 
 ### 1.10 Are transaction history records persisted correctly?
 * **Verdict:** 🟡 **PERSISTED IN SQLITE, NO HISTORY UI PAGE**
-* **File & Function:** [`src/core/security/proposal.ts`](file:///e:/SentinAI%20Gaurdian/src/core/security/proposal.ts#L45-L95) (`proposals` table in `sentinai.db`).
-* **Evidence:** All proposals, statuses (`PREPARED`, `AUTHORIZED`, `SUBMITTING`, `SUBMITTED`, `CONFIRMED`, `REVERTED`, `FAILED`), IIP JSON payloads, and transaction hashes (`tx_hash`) are durably persisted in SQLite (`sentinai.db`). However, there is no `/history` page in the frontend to list past proposals; only the active proposal is shown in [`EvidencePanel.tsx`](file:///e:/SentinAI%20Gaurdian/src/components/agent/EvidencePanel.tsx).
+* **File & Function:** [`src/core/security/proposal.ts`](../../src/core/security/proposal.ts#L45-L95) (`proposals` table in `sentinai.db`).
+* **Evidence:** All proposals, statuses (`PREPARED`, `AUTHORIZED`, `SUBMITTING`, `SUBMITTED`, `CONFIRMED`, `REVERTED`, `FAILED`), IIP JSON payloads, and transaction hashes (`tx_hash`) are durably persisted in SQLite (`sentinai.db`). However, there is no `/history` page in the frontend to list past proposals; only the active proposal is shown in [`EvidencePanel.tsx`](../../src/components/agent/EvidencePanel.tsx).
 
 ---
 
@@ -95,7 +95,7 @@ All 10 test cases (A–J) were executed live against `https://api.groq.com/opena
 | **J** | Unsupported action | `"Swap 1 ETH for USDC"` | `200 OK` (2311 ms) | `{"action":"SWAP","asset":"ETH","amount":"1","recipientAlias":""}` | Blocked at `validateStateChangingIntent`: `UNSUPPORTED_OPERATION: Token swaps are currently unsupported` | **NO** (Safe Block) |
 
 ### Provider Failure & Manipulation Verification
-1. **Gemini Quota Exhausted (`HTTP 429`):** Verified in `parseIntentWithProvenance` ([`src/core/ai/intent-parser.ts`](file:///e:/SentinAI%20Gaurdian/src/core/ai/intent-parser.ts#L36-L59)) — automatically fails over to `GroqIntentProvider` (`providerName: 'groq'`, `aiProvenance: 'LIVE_AI'`).
+1. **Gemini Quota Exhausted (`HTTP 429`):** Verified in `parseIntentWithProvenance` ([`src/core/ai/intent-parser.ts`](../../src/core/ai/intent-parser.ts#L36-L59)) — automatically fails over to `GroqIntentProvider` (`providerName: 'groq'`, `aiProvenance: 'LIVE_AI'`).
 2. **Groq Model Rate-Limited (`429`/`503`/`404`):** `GroqIntentProvider` automatically retries across `['openai/gpt-oss-20b', 'qwen/qwen3.8-27b']`.
 3. **Both Cloud Providers Unavailable:** `parseIntentWithProvenance` catches both errors and falls back to `MockIntentProvider` (`aiProvenance: 'DETERMINISTIC_FALLBACK'`).
 4. **Malformed AI Response:** `JSON.parse` / `ParsedIntentSchema.parse` throws and is classified as `INVALID_RESPONSE` (`src/core/ai/provider.ts:182-186`).
@@ -113,10 +113,10 @@ Live read-only RPC calls were executed against the configured `RPC_URL` (`https:
 * **Live On-Chain Wallet Balance:** `0.05 ETH` (`50000000000000000` wei).
 * **SQLite Database (`sentinai.db`) Broadcast History Check:**
   - Inspected `proposals` table in `sentinai.db`: 5 historical proposals exist (3 `PREPARED`, 2 `FAILED`), **0 proposals have `status = 'CONFIRMED'` or non-null `tx_hash`**.
-  - **Honest Conclusion:** While transaction signing and broadcast code (`createWalletClient`, `walletClient.sendTransaction`, `publicClient.waitForTransactionReceipt` in [`src/core/execution/controller.ts`](file:///e:/SentinAI%20Gaurdian/src/core/execution/controller.ts#L67-L148)) is genuinely implemented using `viem`, **no live on-chain transaction has been broadcast or confirmed yet**.
+  - **Honest Conclusion:** While transaction signing and broadcast code (`createWalletClient`, `walletClient.sendTransaction`, `publicClient.waitForTransactionReceipt` in [`src/core/execution/controller.ts`](../../src/core/execution/controller.ts#L67-L148)) is genuinely implemented using `viem`, **no live on-chain transaction has been broadcast or confirmed yet**.
 * **Simulation Bug Discovered on Live Sepolia RPC (Finding CSF-01):**
   - Native ETH `estimateGas` (`0.05 ETH` to `alice`) succeeded (`gasEstimated = 21000`).
-  - ERC-20 `transfer` and `approve` `estimateGas` calls reverted on live Sepolia RPC with `ERC20: transfer from the zero address` and `ERC20: approve from the zero address` because [`src/core/security/simulator.ts`](file:///e:/SentinAI%20Gaurdian/src/core/security/simulator.ts#L28-L32) does not pass `account` (`from` address) to `publicClient.estimateGas`.
+  - ERC-20 `transfer` and `approve` `estimateGas` calls reverted on live Sepolia RPC with `ERC20: transfer from the zero address` and `ERC20: approve from the zero address` because [`src/core/security/simulator.ts`](../../src/core/security/simulator.ts#L28-L32) does not pass `account` (`from` address) to `publicClient.estimateGas`.
 
 ---
 
@@ -171,10 +171,10 @@ The following project commands were executed and verified:
 1. **Is real Groq AI actually working end-to-end?**   **Yes.** Live calls to `https://api.groq.com/openai/v1/chat/completions` with `openai/gpt-oss-120b` succeeded with `HTTP 200` (518ms–2311ms) for both English and Bengali Unicode commands.
 2. **Is the AI fallback chain working?**   **Yes.** `parseIntentWithProvenance` attempts Gemini first, fails over to Groq Live AI (`openai/gpt-oss-120b` $\to$ `openai/gpt-oss-20b` $\to$ `qwen/qwen3.8-27b`), and falls back to `MockIntentProvider` if both cloud APIs fail.
 3. **Is the wallet genuinely connected to Sepolia?**   **Yes.** The backend derives `0xaeb8387cB3FDa31D059Ac13a42fb201fCb3A2148` from `AGENT_PRIVATE_KEY` and reads live balance (`0.05 ETH`) and block height (`#11921274`) from Sepolia (`Chain ID: 11155111`).
-4. **Can the system really sign transactions?**   **Yes, for native ETH transfers.** `broadcastTransaction` in [`src/core/execution/controller.ts`](file:///e:/SentinAI%20Gaurdian/src/core/execution/controller.ts#L67-L123) uses `viem` `privateKeyToAccount` and `walletClient.sendTransaction`. (Live ERC-20 proposals currently fail Phase 1 simulation due to CSF-01).
+4. **Can the system really sign transactions?**   **Yes, for native ETH transfers.** `broadcastTransaction` in [`src/core/execution/controller.ts`](../../src/core/execution/controller.ts#L67-L123) uses `viem` `privateKeyToAccount` and `walletClient.sendTransaction`. (Live ERC-20 proposals currently fail Phase 1 simulation due to CSF-01).
 5. **Has any transaction actually been broadcast and confirmed?**   **No.** Inspection of `sentinai.db` confirmed 0 rows with `status = 'CONFIRMED'` or non-null `tx_hash`.
 6. **Does the policy engine block unsafe transactions server-side?**   **Yes.** Policy limits (`1.0 ETH`), contact whitelists, approval ceilings (`100 USDC/USDT/DAI`), and calldata mismatches are enforced inside `"use server"` actions and SQLite state gates.
 7. **Can duplicate execution happen?**   **No.** `lockProposalForExecution` executes an atomic synchronous SQLite `UPDATE ... WHERE status = 'AUTHORIZED'`, ensuring only 1 concurrent request can transition to `SUBMITTING`.
-8. **Is the platform currently safe for testnet experiments?**   **Yes, with one precaution (CSF-02):** Before clicking `Confirm & Execute Transaction`, the tester should replace `"alice"`'s address in [`src/core/policy/user-policy.ts`](file:///e:/SentinAI%20Gaurdian/src/core/policy/user-policy.ts#L7) with their own second test wallet address so testnet ETH is not sent to `0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045`.
+8. **Is the platform currently safe for testnet experiments?**   **Yes, with one precaution (CSF-02):** Before clicking `Confirm & Execute Transaction`, the tester should replace `"alice"`'s address in [`src/core/policy/user-policy.ts`](../../src/core/policy/user-policy.ts#L7) with their own second test wallet address so testnet ETH is not sent to `0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045`.
 9. **Is it ready for a competition live demo?**   **Yes.** Live Sepolia balance reads, Groq Live AI parsing (English & Bengali), 5 interactive threat scenarios, semantic bytecode comparison, policy blocking, and native ETH execution gating work cohesively.
 10. **What prevents production readiness?**    (a) Missing `account` in `simulateTransaction` breaking live ERC-20 dry-runs (CSF-01), (b) raw EOA private key in `.env` instead of HSM/KMS or ERC-4337 smart account, (c) hardcoded policy in `user-policy.ts`, (d) in-memory rate limiting trusting `x-forwarded-for`, and (e) missing transaction history UI.

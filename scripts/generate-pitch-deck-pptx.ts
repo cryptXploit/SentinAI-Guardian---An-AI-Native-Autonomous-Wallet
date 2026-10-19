@@ -17,7 +17,7 @@ const SLIDES: SlideSpec[] = [
       '2026 Shenzhen International FinTech Competition — International Track (Topic F)',
       'Speak naturally in English, Bengali (বাংলা), or Banglish — execute safely on Ethereum Sepolia',
       'Strict Privilege Separation: Probabilistic AI Intent Parsing vs. Deterministic Policy Enforcement',
-      'Confirmed On-Chain Sepolia Execution: Tx 0xfe315950...88da (Block #11935960)',
+      'Confirmed On-Chain Sepolia Execution: Tx 0xfe315950...88da (Block #11935960 / 0xb620d8)',
     ],
     footer: 'Slide 1 · Executive Positioning · Topic F: Agent Wallet / Autonomous On-chain Wallet',
   },
@@ -38,8 +38,8 @@ const SLIDES: SlideSpec[] = [
     bullets: [
       'Multilingual Natural-Language Interface: Native English, Bengali (এলিস কে ০.০০০১ ইথ পাঠাও), and Banglish',
       'Resilient Multi-Model AI Failover: Google Gemini 3.8 Flash -> Groq openai/gpt-oss-120b -> Local Fallback',
-      'Deterministic BigInt Policy Engine: Enforces per-tx caps, 24h rolling limits, and trusted recipient registries',
-      'Two-Phase Human-in-the-Loop Gate: Cryptographic Keccak-256 Intent Integrity Proof (IIP) before signing',
+      'Deterministic BigInt Policy Engine: Enforces maxTransferAmountETH (1.0 ETH), trustedContacts & tokenApprovalPolicies',
+      'Two-Phase Human-in-the-Loop Gate: Unkeyed Keccak-256 Intent Integrity Proof (IIP) verified before signing',
     ],
     footer: 'Slide 3 · Product Overview & Value Proposition',
   },
@@ -48,7 +48,7 @@ const SLIDES: SlideSpec[] = [
     subtitle: 'Three Strictly Isolated Security Zones',
     bullets: [
       'Zone 0 (Untrusted Advisory Layer): Cloud LLMs (Gemini / Groq) emit candidate JSON only — zero key access',
-      'Zone 1 (Deterministic Enforcement Core): Negation filter, Zod schema, BigInt math, SQLite policy, RPC simulation',
+      'Zone 1 (Deterministic Enforcement Core): Negation filter, Zod schema, parseTokenAmount BigInt, SQLite policy, RPC sim',
       'Zone 2 (Isolated Execution Core): Gate 6.5 live revalidation, SQLite CAS lock, crash recovery journal, Viem signer',
       'Security Fixture Isolation: Educational threat scenarios (is_executable = 0) are permanently isolated from signing',
     ],
@@ -56,10 +56,10 @@ const SLIDES: SlideSpec[] = [
   },
   {
     title: 'Resilient AI Failover & Multilingual Safety',
-    subtitle: 'Self-Healing Intent Parsing with Request-Scoped Provenance',
+    subtitle: 'Self-Healing Intent Parsing with Provenance Tracking',
     bullets: [
       'Automatic Provider Failover: 10s AbortController timeout seamlessly routes Gemini 429/503 spikes to live Groq',
-      'Request-Scoped Provenance: Concurrent requests return isolated LIVE_AI (Groq/Gemini) or FALLBACK badges',
+      'Transparent Provenance Badges: Explicitly labels LIVE_AI (Groq / Gemini) vs. DETERMINISTIC_FALLBACK',
       'Dual-Layer Negation Filter: Blocks "Do not send..." and "পাঠিও না" at both AI provider and pre-builder gates',
       'Adversarial Override Neutralization: Deterministic regex + prompt rules force policy-override attacks to UNKNOWN',
     ],
@@ -69,30 +69,30 @@ const SLIDES: SlideSpec[] = [
     title: 'Deterministic Policy Engine & Calldata Analyzer',
     subtitle: 'Zero Floating-Point Rounding & Bytecode-Level Inspection',
     bullets: [
-      'Exact Integer BigInt Scaling (parseAssetAmountToBigInt): Eliminates IEEE-754 floating-point precision bugs',
-      'SQLite-Persisted Policy Firewall: Configurable Per-Tx Limit (0.5 ETH), 24h Rolling Cap (2.0 ETH), Trusted Contacts',
-      'EVM Calldata Decoder: Inspects 0xa9059cbb (transfer) and 0x095ea7b3 (approve) against user intent',
-      'ERC-20 Exposure Analyzer: Queries live on-chain allowance(owner, spender) and blocks unverified spenders',
+      'Exact Integer BigInt Scaling (parseTokenAmount): Verified across ETH, DAI (18 dec) and USDC, USDT (6 dec)',
+      'SQLite-Persisted Policy Firewall: Configurable maxTransferAmountETH (1.0 ETH), trustedContacts, tokenApprovalPolicies',
+      'EVM Calldata Decoder: Inspects 0xa9059cbb (transfer) and 0x095ea7b3 (approve) against user intent (0 Mismatches)',
+      'ERC-20 Exposure Analyzer: Queries live on-chain allowance(owner, spender) and blocks unauthorized spenders',
     ],
     footer: 'Slide 6 · Deterministic Policy & Semantic Calldata Verification',
   },
   {
-    title: 'Intent Integrity Proof (IIP) & Execution State Machine',
-    subtitle: 'Preventing TOCTOU Drift, Tampering, and Replay Double-Spends',
+    title: 'Unkeyed Intent Integrity Proof (IIP) & State Machine',
+    subtitle: 'Preventing TOCTOU Drift, Candidate Tampering, and Replay Double-Spends',
     bullets: [
-      'Cryptographic IIP Digest: Keccak-256 hash over canonical JSON (action, amount, asset, chainId, data, to, value)',
+      'Unkeyed Keccak-256 IIP Digest: keccak256(encodePacked(to, value, chainId, action, asset, policyStatus, data))',
       'Gate 6.5 Live Policy Revalidation: Re-evaluates active SQLite policy at Phase 2 immediately before signing',
       'Atomic SQLite CAS Lock: Compare-And-Swap transition (AUTHORIZED -> SUBMITTING) prevents double-click replay',
-      'Durable Broadcast Recovery Journal: Reconciles mid-broadcast RPC drops via on-chain block scanning',
+      'Durable Broadcast Recovery Journal: Reconciles mid-broadcast RPC drops via 10-block on-chain transaction scanning',
     ],
-    footer: 'Slide 7 · Cryptographic Integrity & Crash-Safe State Machine',
+    footer: 'Slide 7 · Cryptographic Integrity Digest & Crash-Safe State Machine',
   },
   {
-    title: 'Verified Live Sepolia Blockchain & AI Evidence',
+    title: 'Verified Live Sepolia Blockchain & Test Evidence',
     subtitle: 'Real On-Chain Execution & 354 Automated Tests Passing',
     bullets: [
       'Confirmed Sepolia Transaction: 0xfe315950001536c94f363c6e7b6522eef69a2b874d958544dd91efe5ee8388da',
-      'Block #11935960 (2026-10-17T18:55:12Z) · Proposal ID: 7540a5f1-dcb4-4797-b46a-13ec74fa96d9 (Status: CONFIRMED)',
+      'Block #11935960 (0xb620d8 · 2026-10-17T18:55:12Z) · Proposal ID: 7540a5f1-dcb4-4797-b46a-13ec74fa96d9 (CONFIRMED)',
       'EIP-2780 Gas Floor Engineering: 12,000 simulated warm self-transfer gas vs. 21,000 broadcast gas floor enforced',
       'Comprehensive QA Gate: 354/354 Vitest tests (33 suites) + 12/12 Headless Chrome E2E browser flows passing',
     ],
@@ -110,37 +110,37 @@ const SLIDES: SlideSpec[] = [
     footer: 'Slide 9 · User Experience & Interface Modernization',
   },
   {
-    title: 'Commercial Value & Market Opportunity (30% Weight)',
-    subtitle: 'Practical Adoption Across Retail, Institutional Treasury, and B2B SDKs',
+    title: 'Transparent Security Boundaries & Residual Risks',
+    subtitle: 'Honest Engineering Assessment of Current Scope & Assumptions',
+    bullets: [
+      'Server-Held Testnet EOA Key: AGENT_PRIVATE_KEY is isolated server-side on Sepolia; production targets KMS / ERC-4337',
+      'Unkeyed IIP Digest Scope: computeIIPDigest detects parameter drift between Phase 1 & 2, relying on SQLite integrity',
+      'Per-Transaction Cap Scope: Enforces per-tx maxTransferAmountETH (1.0 ETH) and per-token approval ceilings',
+      'Single-Node Persistence & RPC Trust: SQLite WAL and 10-block recovery scanner operate on single-instance deployment',
+    ],
+    footer: 'Slide 10 · Known Risks, Assumptions & Security Transparency',
+  },
+  {
+    title: 'Commercial Relevance & Competitive Differentiation',
+    subtitle: 'Practical Adoption Across Retail, Treasury Co-Pilots, and B2B SDKs',
     bullets: [
       '1. Multilingual Retail Web3 Onboarding: Safe conversational wallet access across emerging markets (EN/BN/Banglish)',
-      '2. DAO & SME Treasury Co-Pilot: Junior operators propose transfers in natural language within hard spend caps',
+      '2. DAO & SME Treasury Co-Pilot: Operators propose transfers in natural language within hard per-tx spend caps',
       '3. B2B Agent Risk-Firewall SDK: Drop-in policy, simulation, and IIP middleware for AI agent frameworks',
-      'Monetization: Institutional SaaS policy governance seats + B2B SDK licensing + compliance audit exports',
+      'Differentiation: Pairs multi-model NLP failover with deterministic calldata decoding and two-phase human control',
     ],
-    footer: 'Slide 10 · Commercial Value & Business Model',
+    footer: 'Slide 11 · Commercial Value (30%) & Differentiation',
   },
   {
-    title: 'Competitive Differentiation Matrix',
-    subtitle: 'How SentinAI Guardian Outperforms Naive AI Agents & Traditional EOA Wallets',
-    bullets: [
-      'vs. Naive LLM Agent Wallets: Adds non-bypassable SQLite BigInt policy caps, Gate 6.5, and dual-layer negation filters',
-      'vs. Traditional EOA Wallets (MetaMask): Adds multilingual NLP intent parsing and side-by-side calldata vs. intent checks',
-      'Cryptographic Binding: Keccak-256 Intent Integrity Proof prevents parameter tampering between prepare and sign',
-      'Operational Resilience: Multi-provider AI failover (Gemini -> Groq -> Local) + crash-safe broadcast recovery journal',
-    ],
-    footer: 'Slide 11 · Competitive Differentiation',
-  },
-  {
-    title: 'Production Roadmap & Institutional Scaling',
+    title: 'Production Roadmap & Closing Proposition',
     subtitle: 'From Verified Sepolia Autonomous Wallet to Enterprise Smart Accounts',
     bullets: [
       'Completed (Milestone R8.5): Full 2-Phase Deterministic Agent Wallet on Sepolia with confirmed on-chain execution',
-      'Phase 2 (Q1 2027): ERC-4337 Smart Account Integration (Safe + Session Key Validators for on-chain policy hooks)',
+      'Phase 2 (Q1 2027): ERC-4337 Smart Account Integration (Safe + Session Key Validators + rolling 24h spend hooks)',
       'Phase 3 (Q2 2027): AWS KMS / HSM & TEE Enclave Signing + Multi-Tenant PostgreSQL Serializable Policy Cluster',
-      'Phase 4 (Q3 2027): Cross-Chain Intent Settlement across Arbitrum, Base, Optimism, and Polygon',
+      'Closing Proposition: Speak naturally. Verify deterministically. Execute safely with SentinAI Guardian.',
     ],
-    footer: 'Slide 12 · Future Roadmap & Conclusion',
+    footer: 'Slide 12 · Future Roadmap & Closing Proposition',
   },
 ];
 
@@ -224,7 +224,7 @@ function buildSlideXml(slide: SlideSpec, slideNumber: number): string {
               </a:rPr>
               <a:t>${escapeXml(slide.title)}</a:t>
             </a:r>
-          </a:p>
+          </p>
           <a:p>
             <a:r>
               <a:rPr lang="en-US" sz="1800" b="1" dirty="0">
@@ -295,7 +295,6 @@ function buildSlideXml(slide: SlideSpec, slideNumber: number): string {
 </p:sld>`;
 }
 
-// Minimal CRC32 + ZIP writer using Node built-in zlib
 function crc32(buf: Buffer): number {
   let crc = 0xffffffff;
   for (let i = 0; i < buf.length; i++) {
@@ -319,12 +318,12 @@ function createZipBuffer(files: Array<{ name: string; content: string | Buffer }
     const crc = crc32(rawData);
 
     const localHeader = Buffer.alloc(30 + nameBuf.length);
-    localHeader.writeUInt32LE(0x04034b50, 0); // signature
-    localHeader.writeUInt16LE(20, 4); // version needed
-    localHeader.writeUInt16LE(0, 6); // flags
-    localHeader.writeUInt16LE(8, 8); // compression method: deflate
-    localHeader.writeUInt16LE(0, 10); // mod time
-    localHeader.writeUInt16LE(0, 12); // mod date
+    localHeader.writeUInt32LE(0x04034b50, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt16LE(0, 6);
+    localHeader.writeUInt16LE(8, 8);
+    localHeader.writeUInt16LE(0, 10);
+    localHeader.writeUInt16LE(0, 12);
     localHeader.writeUInt32LE(crc, 14);
     localHeader.writeUInt32LE(compressed.length, 18);
     localHeader.writeUInt32LE(rawData.length, 22);
@@ -543,6 +542,43 @@ function generatePptx() {
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, zipBuf);
   console.log(`Generated PPTX: ${outPath} (${zipBuf.length} bytes, ${SLIDES.length} slides)`);
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { execFileSync } = require('child_process');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+      body{margin:0;padding:24px;background:#050811;font-family:Calibri,sans-serif;color:#F9FAFB;display:grid;grid-template-columns:repeat(3,1fr);gap:20px;width:1860px;box-sizing:border-box}
+      .slide{aspect-ratio:16/9;background:#0B0F17;border:2px solid #1E293B;border-radius:10px;padding:22px 26px;display:flex;flex-direction:column;justify-content:space-between;box-sizing:border-box;box-shadow:0 8px 24px rgba(0,0,0,0.5)}
+      .hdr h2{margin:0 0 6px 0;font-size:19px;color:#F9FAFB}
+      .hdr p{margin:0;font-size:12px;color:#3B82F6;font-weight:700}
+      .card{background:#111827;border:1px solid #1F2937;border-radius:8px;padding:12px 16px;flex:1;margin:10px 0;display:flex;flex-direction:column;justify-content:center}
+      ul{margin:0;padding-left:18px}
+      li{font-size:11px;line-height:1.45;color:#E5E7EB;margin-bottom:6px}
+      .ftr{font-family:Consolas,monospace;font-size:9.5px;color:#9CA3AF}
+    </style></head><body>${SLIDES.map(
+      (s) =>
+        `<div class="slide"><div class="hdr"><h2>${escapeXml(s.title)}</h2><p>${escapeXml(s.subtitle)}</p></div><div class="card"><ul>${s.bullets
+          .map((b) => `<li>${escapeXml(b)}</li>`)
+          .join('')}</ul></div><div class="ftr">${escapeXml(s.footer)}</div></div>`
+    ).join('')}</body></html>`;
+    const presDir = path.resolve(process.cwd(), 'evidence/presentation');
+    fs.mkdirSync(presDir, { recursive: true });
+    const tmpHtml = path.join(presDir, 'slides_preview.html');
+    const outPng = path.join(presDir, 'slides_overview.png');
+    fs.writeFileSync(tmpHtml, html, 'utf8');
+    execFileSync('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', [
+      '--headless=new',
+      '--disable-gpu',
+      '--hide-scrollbars',
+      '--window-size=1860,1420',
+      `--screenshot=${outPng}`,
+      `file:///${tmpHtml.replace(/\\/g, '/')}`,
+    ]);
+    fs.unlinkSync(tmpHtml);
+    console.log(`Rendered visual contact sheet: ${outPng}`);
+  } catch (err) {
+    console.warn('Skipped visual contact sheet render:', (err as Error).message);
+  }
 }
 
 generatePptx();

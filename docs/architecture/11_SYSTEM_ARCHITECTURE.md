@@ -25,13 +25,13 @@ flowchart TB
         SessionGuard["HMAC-SHA256 Session & Owner Identity Verifier"]
         NegationGate["Pre-Builder Negation & Injection Filter"]
         AIRouter["Multi-Provider AI Failover Chain (Gemini -> Groq -> Local)"]
-        IntentValidator["Strict Zod Schema & BigInt Precision Validator"]
+        IntentValidator["Strict Zod Schema & parseTokenAmount BigInt Validator"]
         RecipientResolver["Fail-Closed Trusted Recipient Resolver"]
-        TxBuilder["Canonical Transaction Builder (ETH / ERC-20)"]
+        TxBuilder["Canonical Transaction Builder (ETH / USDC / USDT / DAI)"]
         PolicyEngine["Deterministic Financial Policy Engine"]
         Analyzer["Semantic Calldata & Approval Exposure Analyzer"]
         Simulator["Sepolia Pre-Flight RPC Simulator (viem)"]
-        IIPEngine["Cryptographic Intent Integrity Proof (Keccak-256)"]
+        IIPEngine["Unkeyed Keccak-256 Intent Integrity Proof (IIP)"]
         Gate65["Gate 6.5 Live Policy Revalidator"]
         ExecutionCtrl["Isolated Viem Signer & Broadcast Recovery Controller"]
     end
@@ -78,9 +78,9 @@ flowchart TB
 | Layer | Module Path | Responsibility |
 |---|---|---|
 | **Presentation Layer** | `src/app/page.tsx`, `src/components/agent/*`, `src/components/layout/*` | Renders live Sepolia telemetry, 60-second Guided Judge Walkthrough, 6-stage pipeline stepper, side-by-side User Intent vs. Actual Transaction comparison, Pre-Execution Review card, and SQLite policy/history editors. |
-| **Authentication Layer** | `src/core/security/auth.ts`, `src/app/api/auth/*` | Verifies operator password using `crypto.timingSafeEqual`, issues `httpOnly` HMAC-SHA256 session cookies (`sentinai_session`), enforces per-IP login rate limits, and binds sessions to the configured wallet owner ID. |
-| **AI Intent Layer** | `src/core/ai/provider.ts`, `src/core/ai/intent-parser.ts`, `src/core/ai/security-explainer.ts` | Translates English, Bengali (`বাংলা`), and Banglish commands into structured JSON (`ParsedIntentSchema`) via `FallbackIntentProvider` (`GeminiIntentProvider` → `GroqIntentProvider` → `MockIntentProvider`) with request-scoped provenance tracking. |
-| **Domain & Precision Layer** | `src/core/domain/schemas.ts`, `src/core/utils/financial.ts` | Enforces strict Zod schemas (`TRANSFER`, `APPROVE`, `QUERY_BALANCE`, `QUERY_NETWORK`, `UNKNOWN`) and exact integer `BigInt` decimal conversion without floating-point rounding. |
-| **Deterministic Policy Layer** | `src/core/policy/engine.ts`, `src/core/policy/user-policy.ts` | Evaluates every transaction candidate against SQLite-persisted per-tx limits, 24h rolling daily caps, allowed chains (`11155111`), allowed assets (`ETH`, `USDC`, `LINK`), trusted recipients, and approved ERC-20 spenders. |
-| **Semantic Security & Simulation Layer** | `src/core/security/transaction-analyzer.ts`, `src/core/security/approval-analyzer.ts`, `src/core/security/simulator.ts`, `src/core/security/iip.ts` | Decodes raw calldata (`0xa9059cbb`, `0x095ea7b3`), detects unlimited/excessive token approvals, simulates execution on Sepolia (`eth_estimateGas` / `simulateContract`), and computes the `keccak256` Intent Integrity Proof digest. |
+| **Authentication Layer** | `src/core/security/auth.ts`, `src/app/api/auth/*` | Verifies operator password using `crypto.timingSafeEqual`, issues `httpOnly` HMAC-SHA256 session cookies (`sentinai_session`) persisted in SQLite `sessions`, enforces per-IP login rate limits, and binds sessions to the operator ID. |
+| **AI Intent Layer** | `src/core/ai/provider.ts`, `src/core/ai/intent-parser.ts`, `src/core/ai/security-explainer.ts` | Translates English, Bengali (`বাংলা`), and Banglish commands into structured JSON (`ParsedIntentSchema`) via `parseIntentWithProvenance` (`GeminiIntentProvider` → `GroqIntentProvider` → `MockIntentProvider`). |
+| **Domain & Precision Layer** | `src/core/domain/schemas.ts`, `src/core/utils/financial.ts` | Enforces strict Zod schemas (`TRANSFER`, `APPROVE`, `QUERY_BALANCE`, `QUERY_NETWORK`, `UNKNOWN`) and exact integer `BigInt` decimal conversion via `parseTokenAmount(amount, decimals)` without floating-point rounding. |
+| **Deterministic Policy Layer** | `src/core/policy/engine.ts`, `src/core/policy/user-policy.ts` | Evaluates every transaction candidate against SQLite-persisted `maxTransferAmountETH` (`1.0 ETH`), `allowUnlimitedApproval` (`false`), `trustedContacts`, and per-token `tokenApprovalPolicies` (`USDC`, `USDT`, `DAI`). |
+| **Semantic Security & Simulation Layer** | `src/core/security/transaction-analyzer.ts`, `src/core/security/approval-analyzer.ts`, `src/core/security/simulator.ts`, `src/core/security/iip.ts` | Decodes raw calldata (`0xa9059cbb`, `0x095ea7b3`), detects unlimited/excessive token approvals, simulates execution on Sepolia (`eth_estimateGas` / `simulateContract`), and computes the unkeyed `keccak256(encodePacked(...))` Intent Integrity Proof digest. |
 | **Persistence & Execution Layer** | `src/core/security/proposal.ts`, `src/core/execution/controller.ts` | Manages SQLite proposal state transitions (`PREPARED` → `AUTHORIZED` → `SUBMITTING` → `SUBMITTED` → `CONFIRMED`), atomic CAS locking, pre-broadcast recovery journaling, `21,000` gas floor enforcement, and Sepolia receipt reconciliation. |

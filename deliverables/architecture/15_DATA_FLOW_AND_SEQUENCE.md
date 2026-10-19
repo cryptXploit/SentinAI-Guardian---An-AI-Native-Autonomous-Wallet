@@ -21,16 +21,16 @@ sequenceDiagram
     Operator->>UI: Submits "Send 0.0001 ETH to alice" (or Bengali/Banglish equivalent)
     UI->>Orch: prepareTransactionIntent(command)
     Orch->>Orch: verifySession() & Pre-Builder Negation Check
-    Orch->>AI: parseIntentWithProvenance(command)
+    Orch->>AI: parseIntent(command) -> parseIntentWithProvenance(command)
     AI-->>Orch: { intent: TRANSFER 0.0001 ETH -> alice, provider: groq/gemini }
-    Orch->>Orch: validateStateChangingIntent() & BigInt Precision Check
+    Orch->>Orch: validateStateChangingIntent() & parseTokenAmount() BigInt Check
     Orch->>DB: getActiveUserPolicy(ownerId) & resolveRecipientFromPolicy("alice")
     DB-->>Orch: Policy + Checksummed Recipient Address (0xaeb8...2148)
     Orch->>Orch: buildTransaction() -> { chainId: 11155111, to, value: 100000000000000n, data: "0x" }
-    Orch->>DB: evaluatePolicy() (Checks Per-Tx Cap, 24h Rolling Spend, Trusted Recipient)
-    Orch->>RPC: getLiveWalletOverview() & simulateTransaction(candidate, sender)
-    RPC-->>Orch: Balance OK (0.04999 ETH) & Gas Estimate OK (12000 intrinsic / 21000 floor)
-    Orch->>Orch: analyzeTransaction() & generateIIP() -> Keccak-256 Digest
+    Orch->>DB: evaluatePolicy() (Checks maxTransferAmountETH, Trusted Contacts, Approval Ceilings)
+    Orch->>RPC: simulateTransaction(candidate, sender)
+    RPC-->>Orch: Gas Estimate OK (12000 intrinsic / 21000 broadcast floor)
+    Orch->>Orch: analyzeTransaction() & generateIIP() -> Unkeyed Keccak-256 Digest
     Orch->>DB: storeProposal(status='PREPARED', provenance='LIVE_VERIFIED', digest)
     Orch-->>UI: PrepareResult (Summary, Analysis, IIP Digest, AI Provenance)
     UI-->>Operator: Renders Pre-Execution Transaction Review & "Confirm & Execute" Gate
@@ -39,8 +39,8 @@ sequenceDiagram
     Operator->>UI: Clicks "Confirm & Execute Transaction"
     UI->>Orch: authorizeAndExecute(proposalId)
     Orch->>Orch: verifySession() & Check Proposal Ownership / Expiration
-    Orch->>DB: Re-fetch Active Policy & Re-run evaluatePolicy() (Gate 6.5 Live Revalidation)
-    Orch->>Orch: verifyIIPDigest(candidate, intent, storedDigest)
+    Orch->>DB: Re-fetch Active Policy & Re-run evaluatePolicy() + analyzeTransaction() (Gate 6.5)
+    Orch->>Orch: verifyIIPDigest(proposal.iipData)
     Orch->>DB: authorizeProposal() -> status='AUTHORIZED'
     Orch->>DB: lockProposalForExecution() (Atomic CAS -> status='SUBMITTING')
     Orch->>Orch: writeBroadcastRecoveryJournal(proposalId, candidate)
@@ -69,10 +69,10 @@ sequenceDiagram
 
     Operator->>UI: Clicks Step 1 ("Show my balance")
     UI->>Orch: prepareTransactionIntent("Show my balance")
-    Orch->>AI: parseIntentWithProvenance("Show my balance")
+    Orch->>AI: parseIntent("Show my balance")
     AI-->>Orch: { action: "QUERY_BALANCE", providerName: "groq" }
-    Orch->>RPC: getLiveWalletOverview() (eth_getBalance, ERC-20 balanceOf, eth_blockNumber)
-    RPC-->>Orch: Native ETH (0.049999999998368 ETH), USDC (0), LINK (0), Block #11946788
+    Orch->>RPC: getLiveWalletOverview() (eth_getBalance, ERC-20 balanceOf for USDC/USDT/DAI, eth_blockNumber)
+    RPC-->>Orch: Native ETH (0.049999999998368 ETH), USDC (0.00), USDT (0.00), DAI (0.0000), Block #11946788
     Orch-->>UI: PrepareResult { isQuery: true, queryResult, aiProvenance: 'LIVE_AI' }
     UI-->>Operator: Renders Live Wallet Intelligence Card (READ-ONLY · NO SIGNER REQUIRED)
 ```

@@ -416,7 +416,7 @@ export default function EvidencePanel({
                 <div className="p-3 rounded-lg bg-emerald-950/15 border border-emerald-500/20">
                   <span className="text-emerald-400/90 font-semibold block">Policy Engine Verdict</span>
                   <span className="text-gray-300 mt-0.5 block">
-                    ALLOW — Within Per-Tx Limit &amp; 24h Rolling Spend Cap
+                    ALLOW — Within Max Transfer Limit &amp; Trusted Contact Policy
                   </span>
                 </div>
                 <div className="p-3 rounded-lg bg-emerald-950/15 border border-emerald-500/20">

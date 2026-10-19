@@ -11,7 +11,7 @@
 
 ব্যাংকিং বা ক্রিপ্টো ওয়ালেটে ব্লকচেইন ট্রানজাকশন একবার হয়ে গেলে তা আর ফেরত আনা যায় না (Irreversible)। তাই আমাদের সিস্টেমের প্রধান নিয়ম হলো: **AI কখনো অনুমান (Guess) করে টাকা পাঠাবে না।**
 
-এখন আমাদের কোডে ([`src/core/policy/user-policy.ts`](file:///e:/SentinAI%20Gaurdian/src/core/policy/user-policy.ts) এর `resolveRecipientFromPolicy` ফাংশনে) এটি ৩টি স্তরে সমাধান করা হয়েছে:
+এখন আমাদের কোডে ([`src/core/policy/user-policy.ts`](../../src/core/policy/user-policy.ts) এর `resolveRecipientFromPolicy` ফাংশনে) এটি ৩টি স্তরে সমাধান করা হয়েছে:
 
 1. **ডুপ্লিকেট বা কনফিউজিং নাম থাকলে অটো-ব্লক (Ambiguity Detection):**   ধরুন আপনার কন্টাক্ট লিস্টে দুইজন Alice আছেন—একজন `alice_personal` এবং অন্যজন `alice_work`। আপনি যদি কমান্ড দেন `"Send 0.05 ETH to alice"`, তাহলে এজেন্ট অনুমান না করে সাথে সাথে ট্রানজাকশন **BLOCK** করে দেবে এবং স্ক্রিনে বলবে:   > `Ambiguous recipient alias 'alice': Multiple contacts match (alice_personal, alice_work). Specify the exact contact alias or whitelisted 0x address.`
 2. **ইউনিক ডাকনাম (Unique Contact Alias):**   সঠিক মানুষটিকে পাঠাতে হলে ইউজারকে নির্দিষ্ট ডাকনাম বলতে হবে—যেমন: `"Send 0.05 ETH to alice_personal"`।
@@ -22,7 +22,7 @@
 ### ২. পলিসি কে সেট করবে? কোথা থেকে সেট করা থাকবে? আর এখানে কীসের পলিসি মানার কথা বলা হয়েছে?
 
 * **পলিসি কে সেট করবে?**  ওয়ালেটের আসল **মানুষ মালিক (Human Wallet Owner / Operator)** পলিসি সেট করবেন (`OPERATOR_PASSWORD` দিয়ে লগইন করার পর)। AI এজেন্টের নিজের কোনো ক্ষমতা নেই পলিসি পরিবর্তন করার। মালিক আগে থেকেই লোহার খাঁচার মতো নিয়ম (Deterministic Guardrails) বেঁধে দেন, আর AI সেই খাঁচার ভেতরে থেকে কাজ করে।
-* **কোথা থেকে সেট করা থাকে?**  ১) `.env` ফাইলে `APPROVED_TEST_RECIPIENT_ADDRESS` দিয়ে নিরাপদ টেস্ট রিসিপিয়েন্ট সেট করা যায়, এবং ২) ড্যাশবোর্ডের **`#policies` (Deterministic Security Policy Management)** সেকশন থেকে অথেন্টিকেটেড অপারেটর সরাসরি SQLite ডাটাবেসে (`user_policies` ও `policy_audit_log` টেবিলে) ট্রান্সফার লিমিট ও ট্রাস্টেড কন্টাক্ট আপডেট করতে পারেন ([`src/core/policy/user-policy.ts`](file:///e:/SentinAI%20Gaurdian/src/core/policy/user-policy.ts) ও [`src/core/policy/engine.ts`](file:///e:/SentinAI%20Gaurdian/src/core/policy/engine.ts))। কোনো কন্টাক্ট কনফিগার করা না থাকলে সিস্টেম অনুমান না করে **Fail-Closed** অবস্থায় ব্লক করে দেয়।
+* **কোথা থেকে সেট করা থাকে?**  ১) `.env` ফাইলে `APPROVED_TEST_RECIPIENT_ADDRESS` দিয়ে নিরাপদ টেস্ট রিসিপিয়েন্ট সেট করা যায়, এবং ২) ড্যাশবোর্ডের **`#policies` (Deterministic Security Policy Management)** সেকশন থেকে অথেন্টিকেটেড অপারেটর সরাসরি SQLite ডাটাবেসে (`user_policies` ও `policy_audit_log` টেবিলে) ট্রান্সফার লিমিট ও ট্রাস্টেড কন্টাক্ট আপডেট করতে পারেন ([`src/core/policy/user-policy.ts`](../../src/core/policy/user-policy.ts) ও [`src/core/policy/engine.ts`](../../src/core/policy/engine.ts))। কোনো কন্টাক্ট কনফিগার করা না থাকলে সিস্টেম অনুমান না করে **Fail-Closed** অবস্থায় ব্লক করে দেয়।
 * **এখানে মোট ৬টি আর্থিক ও নিরাপত্তা পলিসি (Security Policies) মানা হচ্ছে:**
   1. **সর্বোচ্চ ট্রান্সফার লিমিট (Max Transfer Cap):** ডিফল্টভাবে এক বারে সর্বোচ্চ **`1.0 ETH`** পাঠানো যাবে (`maxTransferAmountETH: 1.0`)। এর বেশি (যেমন `2 ETH` বা `5 ETH`) পাঠাতে বললে সাথে সাথে ব্লক হবে।
   2. **ট্রাস্টেড অ্যাড্রেস হোয়াইটলিস্ট (Trusted Contacts Only — CSF-02):** শুধুমাত্র অপারেটরের অনুমোদিত কন্টাক্ট লিস্টে থাকা অ্যাড্রেস ছাড়া পৃথিবীর অন্য কোনো অচেনা অ্যাড্রেসে এক পয়সাও পাঠানো যাবে না।
@@ -37,7 +37,7 @@
 
 ### কীভাবে Gemini ও Groq একসাথে কাজ করছে? (Multi-Tier AI Priority Chain)
 
-আমরা [`src/core/ai/provider.ts`](file:///e:/SentinAI%20Gaurdian/src/core/ai/provider.ts), [`src/core/ai/intent-parser.ts`](file:///e:/SentinAI%20Gaurdian/src/core/ai/intent-parser.ts), এবং [`src/core/ai/security-explainer.ts`](file:///e:/SentinAI%20Gaurdian/src/core/ai/security-explainer.ts)-এ ৩-স্তরের ইন্টেলিজেন্ট চেইন তৈরি করেছি:
+আমরা [`src/core/ai/provider.ts`](../../src/core/ai/provider.ts), [`src/core/ai/intent-parser.ts`](../../src/core/ai/intent-parser.ts), এবং [`src/core/ai/security-explainer.ts`](../../src/core/ai/security-explainer.ts)-এ ৩-স্তরের ইন্টেলিজেন্ট চেইন তৈরি করেছি:
 
 1. **স্তর ১ — Google Gemini (Primary):**   যদি `.env` ফাইলে `GEMINI_API_KEY` দেওয়া থাকে, সিস্টেম সবার আগে Gemini-কে রিকোয়েস্ট পাঠাবে।
 2. **স্তর ২ — Groq LPU API (Automatic Live AI Failover):**   - যদি `.env`-এ `GEMINI_API_KEY` না থাকে (শুধু `GROQ_API_KEY` থাকে), **অথবা**

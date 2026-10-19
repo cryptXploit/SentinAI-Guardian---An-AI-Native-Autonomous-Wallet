@@ -382,7 +382,7 @@ Milestone R5E has successfully resolved the operational and integration weakness
 ### Setup Instructions
 1. Navigate to the repository root:
    ```powershell
-   cd "E:\SentinAI Gaurdian"
+   cd "."
    ```
 2. Copy the environment configuration template:
    ```powershell

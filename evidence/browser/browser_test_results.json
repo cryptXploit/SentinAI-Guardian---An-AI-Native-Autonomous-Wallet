@@ -1,5 +1,5 @@
 {
-  "executedAt": "2026-10-19T08:07:23.107Z",
+  "executedAt": "2026-10-19T08:49:56.204Z",
   "browser": "Google Chrome Headless (CDP)",
   "appUrl": "http://localhost:3000",
   "allPassed": true,
@@ -24,10 +24,10 @@
       "screenshot": "evidence/browser/03_authenticated_command_center_1440.png"
     },
     {
-      "step": "4. Responsive Layout Audit (1440px, 768px, 375px)",
+      "step": "4. Responsive Layout Audit (1440px, 1024px, 768px, 375px)",
       "passed": true,
-      "details": "tabletNoOverflow=true, mobileNoOverflow=true",
-      "screenshot": "evidence/ui/mobile_375_overview.png"
+      "details": "laptopNoOverflow=true, tabletNoOverflow=true, mobileNoOverflow=true",
+      "screenshot": "evidence/ui/laptop_1024_overview.png"
     },
     {
       "step": "5. Live Balance Query (\"Show my balance\")",

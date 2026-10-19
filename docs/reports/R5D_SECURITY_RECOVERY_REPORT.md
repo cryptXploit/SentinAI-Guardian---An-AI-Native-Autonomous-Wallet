@@ -321,7 +321,7 @@ All 5 identified vulnerabilities (R5D-01 through R5D-05) have been remediated wi
 ### Setup
 ```powershell
 # Navigate to project
-cd "E:\SentinAI Gaurdian"
+cd "."
 
 # Install dependencies
 npm install

@@ -1,11 +1,7 @@
 # Architecture Overview: SentinAI Guardian
 
-**Project:** SentinAI Guardian  
-**Competition:** 2026 Shenzhen International FinTech Competition  
-**International Track:** Topic F — Autonomous Agent Wallet  
-**Milestone:** R7 — Advanced Intent-Aware Scam Analyzer & Transaction Security Intelligence  
-
-SentinAI Guardian is an Intent-Aware Autonomous Wallet built to bridge Large Language Models (LLMs) with EVM-compatible blockchains securely. It enforces strict separation between untrusted AI interpretation, deterministic transaction construction, semantic calldata inspection, and human authorization.
+**Project:** SentinAI Guardian**Competition:** 2026 Shenzhen International FinTech Competition**International Track:** Topic F — Autonomous Agent Wallet**Milestone:** R8.5 — Final Competition Release (See [`docs/architecture/11_SYSTEM_ARCHITECTURE.md`](./architecture/11_SYSTEM_ARCHITECTURE.md)–[`15_DATA_FLOW_AND_SEQUENCE.md`](./architecture/15_DATA_FLOW_AND_SEQUENCE.md) for full architecture specifications)
+SentinAI Guardian is an Intent-Aware Autonomous Wallet built to bridge Large Language Models (LLMs) with EVM-compatible blockchains securely. It enforces strict separation between untrusted AI interpretation (Groq Llama 3.3 70B / Gemini 2.5 Flash / Mock), deterministic transaction construction, semantic calldata inspection, and two-phase human authorization.
 
 ---
 

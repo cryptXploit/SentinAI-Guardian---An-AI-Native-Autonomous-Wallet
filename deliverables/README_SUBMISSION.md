@@ -24,7 +24,7 @@
 |---|---|
 | [`SentinAI_Guardian_Pitch_Deck.pptx`](./SentinAI_Guardian_Pitch_Deck.pptx) | **12-Slide OpenXML PowerPoint Pitch Deck** covering Problem, Architecture, AI Failover, Policy Firewall, IIP, Live Sepolia Proof, Commercial Value, and Roadmap |
 | [`architecture/11_SYSTEM_ARCHITECTURE.md`](./architecture/11_SYSTEM_ARCHITECTURE.md) | Layered system architecture and trust-zone separation |
-| [`architecture/12_ALGORITHM_DESIGN.md`](./architecture/12_ALGORITHM_DESIGN.md) | Formal algorithms for AI failover, exact `BigInt` decimal scaling, rolling 24h spend caps, and `keccak256` IIP |
+| [`architecture/12_ALGORITHM_DESIGN.md`](./architecture/12_ALGORITHM_DESIGN.md) | Formal algorithms for AI failover, exact `BigInt` decimal scaling (`parseTokenAmount`), per-tx ETH spend caps, and unkeyed `keccak256` IIP |
 | [`architecture/13_SECURITY_ARCHITECTURE.md`](./architecture/13_SECURITY_ARCHITECTURE.md) | 6-Gate defense-in-depth pipeline and 4 core security invariants |
 | [`architecture/14_EXECUTION_STATE_MACHINE.md`](./architecture/14_EXECUTION_STATE_MACHINE.md) | Formal SQLite proposal state machine, CAS lock, and broadcast crash recovery |
 | [`architecture/15_DATA_FLOW_AND_SEQUENCE.md`](./architecture/15_DATA_FLOW_AND_SEQUENCE.md) | End-to-end sequence diagrams for two-phase execution and read-only queries |
